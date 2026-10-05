@@ -6,8 +6,12 @@ import torch
 import time
 
 # ============================================================
-# CourseAgentV7
+# CourseAgentV7-3
 # BIFS 614 Tutor Mode
+#
+# V7-3 Goal:
+# Improve answer grounding and conciseness while preserving
+# the retrieval guardrail introduced in CourseAgentV7.
 # ============================================================
 
 print(
@@ -129,7 +133,7 @@ def retrieve_context(question, top_k=TOP_K):
 # Interactive Tutor Loop
 # ============================================================
 
-print("\nBIFS 614 Tutor Mode")
+print("\nBIFS 614 Tutor Mode - V7-3")
 print("Type 'quit', 'exit', or 'q' to stop.\n")
 
 while True:
@@ -187,10 +191,6 @@ while True:
     # Diagnostic: Display Retrieved Context
     # ========================================================
 
-    # Keep this during V7 testing so we can verify that FAISS
-    # actually retrieved the course material needed to answer
-    # each question.
-
     print("\n========== RETRIEVED CONTEXT ==========")
     print(context)
     print("========== END RETRIEVED CONTEXT ==========\n")
@@ -204,25 +204,26 @@ while True:
 <|system|>
 You are a BIFS 614 course tutor.
 
-Answer questions using only the COURSE CONTEXT provided by
-the BIFS 614 lectures.
+Your answer must be based ONLY on information explicitly
+stated in the COURSE CONTEXT.
 
-Do not use facts that are not written in the COURSE CONTEXT.
-
-Example:
-
-COURSE CONTEXT:
-Python is a programming language commonly used in bioinformatics.
-
-QUESTION:
-What is Python?
-
-ANSWER:
-Python is a programming language commonly used in bioinformatics.
-
-If the COURSE CONTEXT does not answer the question, the only
-allowed response is:
+Rules:
+1. Use only facts explicitly stated in the COURSE CONTEXT.
+2. Do not use outside knowledge or prior knowledge.
+3. Do not infer or assume information that is not explicitly stated.
+4. Do not add explanations, examples, or details that are not in the context.
+5. Answer the QUESTION directly and concisely.
+6. Use the minimum amount of information needed to answer the QUESTION.
+7. Do not discuss whether the context contains an exact definition.
+8. Do not use phrases such as "one might infer", "it seems",
+   "based on my knowledge", or similar speculation.
+9. If the answer is explicitly present in the COURSE CONTEXT,
+   answer using only that information.
+10. If the COURSE CONTEXT does not contain enough information
+    to answer the QUESTION, respond with exactly:
 I could not find the answer in the provided context.
+
+Do not provide any text before or after the answer.
 <|end|>
 
 <|user|>
@@ -232,8 +233,7 @@ COURSE CONTEXT:
 QUESTION:
 {user_prompt}
 
-Give a direct answer using only statements supported by the
-COURSE CONTEXT.
+Answer the QUESTION directly using only the COURSE CONTEXT.
 <|end|>
 
 <|assistant|>
@@ -265,14 +265,16 @@ COURSE CONTEXT.
         output_ids = model.generate(
             input_ids,
 
-            # Keep tutor answers reasonably concise.
-            max_new_tokens=100,
+            # Allow enough room for a short course answer while
+            # discouraging unnecessary long responses.
+            max_new_tokens=120,
 
             # Deterministic generation is preferable for
             # grounded course question answering.
             do_sample=False,
 
-            repetition_penalty=1.1,
+            # Slightly discourage repetitive generation.
+            repetition_penalty=1.05,
 
             # Allow Phi-3's end-of-turn token to stop generation.
             eos_token_id=END_TOKEN_ID,
@@ -313,6 +315,16 @@ COURSE CONTEXT.
 
         if stop_tag in response:
             response = response.split(stop_tag)[0].strip()
+
+
+    # ========================================================
+    # Empty Response Guardrail
+    # ========================================================
+
+    if not response:
+        response = (
+            "I could not find the answer in the provided context."
+        )
 
 
     # ========================================================
