@@ -10,15 +10,15 @@ import time
 # BIFS 614 Tutor Mode
 #
 # V7 Goal:
-# Test adaptive retrieval instead of always sending a fixed
-# number of retrieved chunks to Phi-3.
+# Improve retrieval grounding and prevent Phi-3 from answering
+# questions that are unsupported by the BIFS 614 course content.
 #
-# FAISS searches the five nearest candidate chunks, but only
-# chunks sufficiently close to the best match are included in
-# the final course context.
+# FAISS searches the five nearest candidate chunks. The two
+# closest qualifying chunks are passed to Phi-3 as course
+# context.
 #
-# This version uses the existing knowledge.index and chunks.pkl.
-# No rebuild of the FAISS index is required.
+# Questions whose best retrieved chunk exceeds the maximum
+# allowed distance are rejected before being sent to Phi-3.
 # ============================================================
 
 print(
