@@ -6,10 +6,10 @@ import torch
 import time
 
 # ============================================================
-# CourseAgentV7-7
+# CourseAgentV7-8
 # BIFS 614 Tutor Mode
 #
-# V7-7 Goal:
+# V7-8 Goal:
 # Test adaptive retrieval instead of always sending a fixed
 # number of retrieved chunks to Phi-3.
 #
