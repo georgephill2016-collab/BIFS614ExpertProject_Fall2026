@@ -200,31 +200,22 @@ while True:
     # Phi-3 Prompt
     # ========================================================
 
-    final_prompt = final_prompt = f"""
+    final_prompt = final_prompt = final_prompt = f"""
 <|system|>
 You are a BIFS 614 course tutor.
 
-Answer the student's question using only the information
-contained in the COURSE CONTEXT.
+The COURSE CONTEXT below contains course material retrieved
+for the student's question.
 
-You may summarize or paraphrase information from the COURSE
-CONTEXT to create a clear answer.
+Answer the QUESTION using only information from the COURSE
+CONTEXT.
 
-Do not add facts, explanations, examples, or details from
-your own knowledge.
+You may summarize and paraphrase the COURSE CONTEXT.
 
-Important:
-The answer does NOT need to appear word-for-word in the
-COURSE CONTEXT. If the COURSE CONTEXT contains information
-that answers the question, use that information to create
-a short, direct answer.
+Do not add facts, definitions, examples, explanations, or
+details from outside the COURSE CONTEXT.
 
-Only when the COURSE CONTEXT does not contain information
-that can answer the question, respond exactly:
-I could not find the answer in the provided context.
-
-Keep the answer concise. Do not discuss the retrieval process,
-the context, or whether an exact definition was found.
+Give a short and direct answer to the QUESTION.
 <|end|>
 
 <|user|>
@@ -233,8 +224,6 @@ COURSE CONTEXT:
 
 QUESTION:
 {user_prompt}
-
-Answer using only the COURSE CONTEXT.
 <|end|>
 
 <|assistant|>
