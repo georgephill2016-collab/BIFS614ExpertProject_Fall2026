@@ -102,23 +102,38 @@ DISTANCE_MARGIN = 0.25
 
 
 # ============================================================
+# Retrieval Settings
+# ============================================================
+
+# Retrieve a broader set of candidate chunks from FAISS.
+CANDIDATE_K = 5
+
+# Number of chunks actually passed to Phi-3.
+CONTEXT_K = 2
+
+# If even the best candidate exceeds this distance,
+# reject the question as unrelated to the course material.
+MAX_DISTANCE = 1.50
+
+
+# ============================================================
 # Retrieval Function
 # ============================================================
 
-def retrieve_context(question, candidate_k=CANDIDATE_K):
+def retrieve_context(question):
 
     query_embedding = embedding_model.encode(
         [question],
         convert_to_numpy=True
     )
 
-    # Must match the normalization used when building the index.
+    # Must match normalization used when building the index.
     faiss.normalize_L2(query_embedding)
 
-    # Retrieve several possible matches from FAISS.
+    # Retrieve a broader candidate set.
     distances, indices = index.search(
         query_embedding,
-        candidate_k
+        CANDIDATE_K
     )
 
     print("Candidate Indices:", indices)
@@ -129,77 +144,59 @@ def retrieve_context(question, candidate_k=CANDIDATE_K):
     print(f"Best Distance: {best_distance:.4f}")
     print(f"Maximum Allowed Distance: {MAX_DISTANCE:.4f}")
 
+    # --------------------------------------------------------
+    # Retrieval Guardrail
+    # --------------------------------------------------------
 
-    # ========================================================
-    # Absolute Retrieval Guardrail
-    # ========================================================
-
-    # If even the closest chunk is too far away, treat the
-    # question as unrelated to the course content.
+    # If the closest chunk is still too far away,
+    # consider the question unsupported by the course content.
     if best_distance > MAX_DISTANCE:
 
         print("Retrieval Guardrail: REJECTED")
         return None
 
+    # --------------------------------------------------------
+    # Context Selection
+    # --------------------------------------------------------
 
-    # ========================================================
-    # Adaptive Distance Threshold
-    # ========================================================
-
-    # The adaptive threshold changes for each question.
-    #
-    # Additional chunks are accepted only if they are close
-    # enough to the best matching chunk AND remain below the
-    # absolute MAX_DISTANCE.
-    adaptive_limit = min(
-        MAX_DISTANCE,
-        best_distance + DISTANCE_MARGIN
-    )
-
-    print(f"Adaptive Distance Limit: {adaptive_limit:.4f}")
-
-
-    # ========================================================
-    # Select Relevant Chunks
-    # ========================================================
-
-    retrieved_chunks = []
-    accepted_indices = []
-    accepted_distances = []
+    selected_chunks = []
+    selected_indices = []
+    selected_distances = []
 
     for distance, idx in zip(distances[0], indices[0]):
 
-        if (
-            idx != -1
-            and distance <= adaptive_limit
-        ):
-            retrieved_chunks.append(chunks[idx])
-            accepted_indices.append(int(idx))
-            accepted_distances.append(float(distance))
+        if idx == -1:
+            continue
 
+        if distance > MAX_DISTANCE:
+            continue
 
-    # This should normally contain at least the best chunk
-    # because the best chunk already passed MAX_DISTANCE.
-    # Keep the check as an additional safeguard.
-    if not retrieved_chunks:
+        selected_chunks.append(chunks[idx])
+        selected_indices.append(int(idx))
+        selected_distances.append(float(distance))
+
+        # Stop once enough evidence has been collected.
+        if len(selected_chunks) >= CONTEXT_K:
+            break
+
+    if not selected_chunks:
 
         print("Retrieval Guardrail: REJECTED")
         return None
 
-
     print(
         f"Retrieval Guardrail: PASSED "
-        f"({len(retrieved_chunks)} relevant chunk(s))"
+        f"({len(selected_chunks)} selected chunk(s))"
     )
 
-    print("Accepted Indices:", accepted_indices)
+    print("Selected Indices:", selected_indices)
 
     print(
-        "Accepted Distances:",
-        [round(d, 4) for d in accepted_distances]
+        "Selected Distances:",
+        [round(d, 4) for d in selected_distances]
     )
 
-    return "\n\n".join(retrieved_chunks)
+    return "\n\n".join(selected_chunks)
 
 
 # ============================================================
@@ -276,36 +273,51 @@ while True:
     # ============================================================
 
     final_prompt = f"""
-<|system|>
-You are a BIFS 614 course tutor.
+    <|system|>
+    You are a BIFS 614 course tutor.
 
-Answer the QUESTION using only information from the COURSE
-CONTEXT.
+    Your knowledge for this question is limited to the COURSE CONTEXT
+    provided below.
 
-You may summarize or paraphrase information from the COURSE
-CONTEXT, but do not add information from your own knowledge.
+    Answer the QUESTION using only claims explicitly supported by the
+    COURSE CONTEXT.
 
-When answering a definition question such as "What is X?",
-base the definition directly on how X is described in the
-COURSE CONTEXT. Do not create a definition from prior knowledge.
+    You may summarize or paraphrase the COURSE CONTEXT.
 
-Give only the information needed to directly answer the
-QUESTION. Once the QUESTION has been answered, stop.
+    Do not add facts from your pretrained knowledge, even if those
+    facts are correct.
 
-Do not provide additional examples, applications, background
-information, or explanations unless the QUESTION asks for them.
-<|end|>
+    IMPORTANT:
+    Every factual claim in your answer must be traceable to information
+    stated in the COURSE CONTEXT.
 
-<|user|>
-COURSE CONTEXT:
-{context}
+    For definition questions such as "What is X?", use the definition
+    or description given in the COURSE CONTEXT. Do not expand the
+    definition using outside knowledge.
 
-QUESTION:
-{user_prompt}
-<|end|>
+    For questions asking "why", "how", "what are some examples",
+    advantages, disadvantages, or uses, include the relevant supporting
+    information found in the COURSE CONTEXT.
 
-<|assistant|>
-"""
+    If the COURSE CONTEXT does not contain enough information to answer
+    the QUESTION, respond exactly:
+
+    I could not find the answer in the provided context.
+
+    Give a direct and concise answer. Stop when the QUESTION has been
+    answered.
+    <|end|>
+
+    <|user|>
+    COURSE CONTEXT:
+    {context}
+
+    QUESTION:
+    {user_prompt}
+    <|end|>
+
+    <|assistant|>
+    """
 
 
     # ========================================================
