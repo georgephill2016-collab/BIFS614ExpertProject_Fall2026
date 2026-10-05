@@ -6,13 +6,19 @@ import torch
 import time
 
 # ============================================================
-# CourseAgentV7-5
+# CourseAgentV7-7
 # BIFS 614 Tutor Mode
 #
-# V7-5 Goal:
-# Improve answer grounding and conciseness while preserving
-# the retrieval guardrail introduced in CourseAgentV7-2.
-# Also change Top K = 2 to Top K = 4
+# V7-7 Goal:
+# Test adaptive retrieval instead of always sending a fixed
+# number of retrieved chunks to Phi-3.
+#
+# FAISS searches the five nearest candidate chunks, but only
+# chunks sufficiently close to the best match are included in
+# the final course context.
+#
+# This version uses the existing knowledge.index and chunks.pkl.
+# No rebuild of the FAISS index is required.
 # ============================================================
 
 print(
@@ -74,19 +80,32 @@ print(f"Knowledge base loaded: {len(chunks)} chunks.")
 # Retrieval Settings
 # ============================================================
 
-# Retrieve the four nearest course-content chunks.
-TOP_K = 4
+# Ask FAISS for the five nearest candidate chunks.
+# These are candidates only; all five are NOT automatically
+# sent to Phi-3.
+CANDIDATE_K = 5
 
-# Maximum FAISS L2 distance allowed for retrieved chunks.
-# Smaller distance = more similar.
+# Absolute maximum FAISS L2 distance allowed.
+# If the best result is farther away than this, reject the
+# question before sending anything to Phi-3.
 MAX_DISTANCE = 1.50
+
+# Additional chunks must be reasonably close to the best
+# retrieved chunk.
+#
+# Example:
+# Best distance = 0.70
+# Adaptive limit = 0.70 + 0.25 = 0.95
+#
+# Only candidate chunks with distances <= 0.95 are accepted.
+DISTANCE_MARGIN = 0.25
 
 
 # ============================================================
 # Retrieval Function
 # ============================================================
 
-def retrieve_context(question, top_k=TOP_K):
+def retrieve_context(question, candidate_k=CANDIDATE_K):
 
     query_embedding = embedding_model.encode(
         [question],
@@ -96,35 +115,88 @@ def retrieve_context(question, top_k=TOP_K):
     # Must match the normalization used when building the index.
     faiss.normalize_L2(query_embedding)
 
+    # Retrieve several possible matches from FAISS.
     distances, indices = index.search(
         query_embedding,
-        top_k
+        candidate_k
     )
 
-    print("Indices:", indices)
-    print("Distances:", distances)
+    print("Candidate Indices:", indices)
+    print("Candidate Distances:", distances)
 
     best_distance = float(distances[0][0])
 
     print(f"Best Distance: {best_distance:.4f}")
     print(f"Maximum Allowed Distance: {MAX_DISTANCE:.4f}")
 
-    retrieved_chunks = []
 
-    # Only accept chunks that pass the distance threshold.
+    # ========================================================
+    # Absolute Retrieval Guardrail
+    # ========================================================
+
+    # If even the closest chunk is too far away, treat the
+    # question as unrelated to the course content.
+    if best_distance > MAX_DISTANCE:
+
+        print("Retrieval Guardrail: REJECTED")
+        return None
+
+
+    # ========================================================
+    # Adaptive Distance Threshold
+    # ========================================================
+
+    # The adaptive threshold changes for each question.
+    #
+    # Additional chunks are accepted only if they are close
+    # enough to the best matching chunk AND remain below the
+    # absolute MAX_DISTANCE.
+    adaptive_limit = min(
+        MAX_DISTANCE,
+        best_distance + DISTANCE_MARGIN
+    )
+
+    print(f"Adaptive Distance Limit: {adaptive_limit:.4f}")
+
+
+    # ========================================================
+    # Select Relevant Chunks
+    # ========================================================
+
+    retrieved_chunks = []
+    accepted_indices = []
+    accepted_distances = []
+
     for distance, idx in zip(distances[0], indices[0]):
 
-        if idx != -1 and distance <= MAX_DISTANCE:
+        if (
+            idx != -1
+            and distance <= adaptive_limit
+        ):
             retrieved_chunks.append(chunks[idx])
+            accepted_indices.append(int(idx))
+            accepted_distances.append(float(distance))
 
+
+    # This should normally contain at least the best chunk
+    # because the best chunk already passed MAX_DISTANCE.
+    # Keep the check as an additional safeguard.
     if not retrieved_chunks:
 
         print("Retrieval Guardrail: REJECTED")
         return None
 
+
     print(
         f"Retrieval Guardrail: PASSED "
         f"({len(retrieved_chunks)} relevant chunk(s))"
+    )
+
+    print("Accepted Indices:", accepted_indices)
+
+    print(
+        "Accepted Distances:",
+        [round(d, 4) for d in accepted_distances]
     )
 
     return "\n\n".join(retrieved_chunks)
@@ -134,7 +206,8 @@ def retrieve_context(question, top_k=TOP_K):
 # Interactive Tutor Loop
 # ============================================================
 
-print("\nBIFS 614 Tutor Mode - V7-3")
+print("\nBIFS 614 Tutor Mode - V7-7")
+print("Adaptive Retrieval Test")
 print("Type 'quit', 'exit', or 'q' to stop.\n")
 
 while True:
@@ -171,7 +244,6 @@ while True:
     #
     # This prevents Phi-3 from answering an unrelated question
     # using its pretrained outside knowledge.
-
     if context is None:
 
         response = (
@@ -192,6 +264,8 @@ while True:
     # Diagnostic: Display Retrieved Context
     # ========================================================
 
+    # Keep this visible during testing so we can compare the
+    # retrieved material with Phi-3's generated answer.
     print("\n========== RETRIEVED CONTEXT ==========")
     print(context)
     print("========== END RETRIEVED CONTEXT ==========\n")
@@ -199,9 +273,9 @@ while True:
 
     # ========================================================
     # Phi-3 Prompt
-    # ========================================================
+    # ============================================================
 
-    final_prompt = final_prompt = final_prompt = f"""
+    final_prompt = f"""
 <|system|>
 You are a BIFS 614 course tutor.
 
