@@ -6,12 +6,13 @@ import torch
 import time
 
 # ============================================================
-# CourseAgentV7-3
+# CourseAgentV7-5
 # BIFS 614 Tutor Mode
 #
-# V7-3 Goal:
+# V7-5 Goal:
 # Improve answer grounding and conciseness while preserving
 # the retrieval guardrail introduced in CourseAgentV7-2.
+# Also change Top K = 2 to Top K = 4
 # ============================================================
 
 print(
@@ -73,8 +74,8 @@ print(f"Knowledge base loaded: {len(chunks)} chunks.")
 # Retrieval Settings
 # ============================================================
 
-# Retrieve the two nearest course-content chunks.
-TOP_K = 2
+# Retrieve the four nearest course-content chunks.
+TOP_K = 4
 
 # Maximum FAISS L2 distance allowed for retrieved chunks.
 # Smaller distance = more similar.
