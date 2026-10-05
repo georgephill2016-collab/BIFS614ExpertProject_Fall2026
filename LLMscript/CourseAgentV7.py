@@ -6,10 +6,10 @@ import torch
 import time
 
 # ============================================================
-# CourseAgentV7-8
+# CourseAgentV7-9
 # BIFS 614 Tutor Mode
 #
-# V7-8 Goal:
+# V7-9 Goal:
 # Test adaptive retrieval instead of always sending a fixed
 # number of retrieved chunks to Phi-3.
 #
@@ -203,7 +203,7 @@ def retrieve_context(question):
 # Interactive Tutor Loop
 # ============================================================
 
-print("\nBIFS 614 Tutor Mode - V7-7")
+print("\nBIFS 614 Tutor Mode - V7-9")
 print("Adaptive Retrieval Test")
 print("Type 'quit', 'exit', or 'q' to stop.\n")
 
@@ -272,52 +272,58 @@ while True:
     # Phi-3 Prompt
     # ============================================================
 
-    final_prompt = f"""
-    <|system|>
-    You are a BIFS 614 course tutor.
+    final_prompt = final_prompt = f"""
+<|system|>
+You are a BIFS 614 course tutor.
 
-    Your knowledge for this question is limited to the COURSE CONTEXT
-    provided below.
+Your job is to answer the QUESTION using only the information
+explicitly stated in the COURSE CONTEXT.
 
-    Answer the QUESTION using only claims explicitly supported by the
-    COURSE CONTEXT.
+GROUNDING RULES:
 
-    You may summarize or paraphrase the COURSE CONTEXT.
+1. Use only facts, definitions, descriptions, examples, and
+   explanations that are explicitly stated in the COURSE CONTEXT.
 
-    Do not add facts from your pretrained knowledge, even if those
-    facts are correct.
+2. Do not add facts from your pretrained knowledge, even if those
+   facts are correct or seem logically related to the topic.
 
-    IMPORTANT:
-    Every factual claim in your answer must be traceable to information
-    stated in the COURSE CONTEXT.
+3. Do not introduce a factual claim merely because it can be
+   inferred from the COURSE CONTEXT. If the COURSE CONTEXT does
+   not explicitly support a claim, do not include it.
 
-    For definition questions such as "What is X?", use the definition
-    or description given in the COURSE CONTEXT. Do not expand the
-    definition using outside knowledge.
+4. You may summarize or paraphrase the COURSE CONTEXT, but your
+   answer must preserve the meaning of the information provided.
 
-    For questions asking "why", "how", "what are some examples",
-    advantages, disadvantages, or uses, include the relevant supporting
-    information found in the COURSE CONTEXT.
+5. For definition questions such as "What is X?", base the
+   definition directly on how X is described in the COURSE CONTEXT.
+   Do not replace the course's description with a definition from
+   your pretrained knowledge.
 
-    If the COURSE CONTEXT does not contain enough information to answer
-    the QUESTION, respond exactly:
+6. For questions asking "why", "how", for examples, advantages,
+   disadvantages, uses, or other details, include only the relevant
+   information explicitly provided in the COURSE CONTEXT.
 
-    I could not find the answer in the provided context.
+7. Answer only what the QUESTION asks. Do not provide additional
+   examples, applications, background information, or explanations
+   unless they are needed to answer the QUESTION.
 
-    Give a direct and concise answer. Stop when the QUESTION has been
-    answered.
-    <|end|>
+8. If the COURSE CONTEXT does not contain enough information to
+   answer the QUESTION, respond exactly:
+   I could not find the answer in the provided context.
 
-    <|user|>
-    COURSE CONTEXT:
-    {context}
+Once the QUESTION has been answered, stop.
+<|end|>
 
-    QUESTION:
-    {user_prompt}
-    <|end|>
+<|user|>
+COURSE CONTEXT:
+{context}
 
-    <|assistant|>
-    """
+QUESTION:
+{user_prompt}
+<|end|>
+
+<|assistant|>
+"""
 
 
     # ========================================================
