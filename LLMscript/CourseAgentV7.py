@@ -75,32 +75,6 @@ with open("chunks.pkl", "rb") as f:
 
 print(f"Knowledge base loaded: {len(chunks)} chunks.")
 
-
-# ============================================================
-# Retrieval Settings
-# ============================================================
-
-# Ask FAISS for the five nearest candidate chunks.
-# These are candidates only; all five are NOT automatically
-# sent to Phi-3.
-CANDIDATE_K = 5
-
-# Absolute maximum FAISS L2 distance allowed.
-# If the best result is farther away than this, reject the
-# question before sending anything to Phi-3.
-MAX_DISTANCE = 1.50
-
-# Additional chunks must be reasonably close to the best
-# retrieved chunk.
-#
-# Example:
-# Best distance = 0.70
-# Adaptive limit = 0.70 + 0.25 = 0.95
-#
-# Only candidate chunks with distances <= 0.95 are accepted.
-DISTANCE_MARGIN = 0.25
-
-
 # ============================================================
 # Retrieval Settings
 # ============================================================
