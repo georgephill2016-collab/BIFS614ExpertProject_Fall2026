@@ -11,7 +11,7 @@ import time
 #
 # V7-3 Goal:
 # Improve answer grounding and conciseness while preserving
-# the retrieval guardrail introduced in CourseAgentV7.
+# the retrieval guardrail introduced in CourseAgentV7-2.
 # ============================================================
 
 print(
@@ -200,30 +200,31 @@ while True:
     # Phi-3 Prompt
     # ========================================================
 
-    final_prompt = f"""
+    final_prompt = final_prompt = f"""
 <|system|>
 You are a BIFS 614 course tutor.
 
-Your answer must be based ONLY on information explicitly
-stated in the COURSE CONTEXT.
+Answer the student's question using only the information
+contained in the COURSE CONTEXT.
 
-Rules:
-1. Use only facts explicitly stated in the COURSE CONTEXT.
-2. Do not use outside knowledge or prior knowledge.
-3. Do not infer or assume information that is not explicitly stated.
-4. Do not add explanations, examples, or details that are not in the context.
-5. Answer the QUESTION directly and concisely.
-6. Use the minimum amount of information needed to answer the QUESTION.
-7. Do not discuss whether the context contains an exact definition.
-8. Do not use phrases such as "one might infer", "it seems",
-   "based on my knowledge", or similar speculation.
-9. If the answer is explicitly present in the COURSE CONTEXT,
-   answer using only that information.
-10. If the COURSE CONTEXT does not contain enough information
-    to answer the QUESTION, respond with exactly:
+You may summarize or paraphrase information from the COURSE
+CONTEXT to create a clear answer.
+
+Do not add facts, explanations, examples, or details from
+your own knowledge.
+
+Important:
+The answer does NOT need to appear word-for-word in the
+COURSE CONTEXT. If the COURSE CONTEXT contains information
+that answers the question, use that information to create
+a short, direct answer.
+
+Only when the COURSE CONTEXT does not contain information
+that can answer the question, respond exactly:
 I could not find the answer in the provided context.
 
-Do not provide any text before or after the answer.
+Keep the answer concise. Do not discuss the retrieval process,
+the context, or whether an exact definition was found.
 <|end|>
 
 <|user|>
@@ -233,7 +234,7 @@ COURSE CONTEXT:
 QUESTION:
 {user_prompt}
 
-Answer the QUESTION directly using only the COURSE CONTEXT.
+Answer using only the COURSE CONTEXT.
 <|end|>
 
 <|assistant|>
