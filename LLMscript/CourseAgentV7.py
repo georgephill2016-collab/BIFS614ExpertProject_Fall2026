@@ -210,6 +210,10 @@ CONTEXT.
 You may summarize or paraphrase information from the COURSE
 CONTEXT, but do not add information from your own knowledge.
 
+When answering a definition question such as "What is X?",
+base the definition directly on how X is described in the
+COURSE CONTEXT. Do not create a definition from prior knowledge.
+
 Give only the information needed to directly answer the
 QUESTION. Once the QUESTION has been answered, stop.
 
