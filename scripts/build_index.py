@@ -10,7 +10,7 @@ with open("knowledge.txt", "r", encoding="utf-8") as f:
 
 # commented out chunks = [c.strip() for c in text.split("\n\n") if c.strip()]
 # Split by chunks
-def chunk_text(text, chunk_size=300, overlap=30):
+def chunk_text(text, chunk_size=150, overlap=60):
     """
     Split a document into overlapping chunks by word count.
     """
