@@ -139,7 +139,7 @@ def format_context(results, max_tokens=MAX_CONTEXT_TOKENS):
         remaining = max_tokens - tokens_used
         if remaining <= 20:
             break
-        header = f"[Chunk {result['chunk_id']}]\n"
+        header = ""
         text = result["text"]
         if len(tokenizer.encode(text, add_special_tokens=False)) > remaining - 10:
             continue
@@ -161,7 +161,9 @@ If asked for a quiz, give ONE practice question at a time, grounded in the conte
 do not reveal the answer until the learner attempts it or asks for it.
 If the context does not explicitly support the requested answer or practice question,
 reply with exactly: {FALLBACK}
-Cite supporting chunks using [Chunk N] for factual answers; do not invent citations.
+Explain course information naturally in your own words, without quoting long passages.
+Never mention chunk numbers, retrieved excerpts, source labels, retrieval scores, or internal context formatting in student-facing responses.
+Do not copy source labels or metadata into your answer.
 Do not ask unsolicited questions, generate role labels, or append 'Your answer'.
 Never use previous assistant messages as evidence. Finish your response cleanly.
 """
@@ -329,4 +331,3 @@ while True:
             last_quiz_question = answer
         else:
             previous_question = retrieval_query
-
