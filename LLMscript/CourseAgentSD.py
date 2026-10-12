@@ -24,7 +24,12 @@ DEBUG = False
 
 print("Loading Phi-3...")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
-model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, trust_remote_code=True, torch_dtype=torch.float32 if not torch.cuda.is_available() else torch.float16, device_map="auto")
+model = AutoModelForCausalLM.from_pretrained(
+    MODEL_NAME,
+    dtype=torch.float32 if not torch.cuda.is_available() else torch.float16,
+    device_map="auto",
+    trust_remote_code=False
+)
 model.eval()
 print("Device:", model.device)
 print("Loading embeddings and course index...")
