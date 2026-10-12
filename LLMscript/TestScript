@@ -1,4 +1,4 @@
-# BIFS 614 Question and Answer Tutor - V2
+# BIFS 614 Question and Answer Tutor - V3
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from sentence_transformers import SentenceTransformer
@@ -9,7 +9,7 @@ import time
 import re
 
 # ============================================================
-# CourseAgentQuestionandAnswerV2
+# CourseAgentQuestionandAnswerV3
 # BIFS 614 Tutor Mode
 #
 # V7 Goal:
@@ -154,108 +154,108 @@ def unsupported_technical_terms(answer, context):
 
 
 # ============================================================
+# Hybrid retrieval: exact phrase matches + FAISS
+# ============================================================
+# Exact matching is deliberately limited to informative phrases,
+# to avoid matching generic words like "what" or "analysis".
+# This is an additional retrieval route, NOT proof that a chunk
+# supports an answer. It helps with acronyms such as SAGE.
+
+def lexical_search_phrases(question):
+    q = re.sub(r"[^a-z0-9]+", " ", question.lower()).strip()
+    # Remove common question framing while preserving topic wording.
+    q = re.sub(
+        r"^(?:what is|what are|define|explain|describe|tell me about|"
+        r"how does|how do|why is|why are)\s+", "", q
+    )
+    q = re.sub(r"^(?:a|an|the)\s+", "", q)
+    q = re.sub(r"\b(?:in the course|in our lectures|please)\b", "", q).strip()
+    words = q.split()
+    phrases = []
+    if len(words) >= 2 and len(q) >= 5:
+        phrases.append(q)
+    # Also try distinctive uppercase acronyms found in the question.
+    for acronym in re.findall(r"\b[A-Z]{2,8}\b", question):
+        if acronym.lower() not in {"WHAT", "HOW", "WHY", "THE", "AND"}:
+            phrases.append(acronym.lower())
+    return list(dict.fromkeys(phrases))
+
+
+def lexical_matches(question):
+    phrases = lexical_search_phrases(question)
+    if not phrases:
+        return []
+    matches = []
+    for i, chunk in enumerate(chunks):
+        content = str(chunk).lower()
+        # Boundary checks stop "SAGE" matching words like "message".
+        for phrase in phrases:
+            if re.search(r"(?<![a-z0-9])" + re.escape(phrase) +
+                         r"(?![a-z0-9])", content):
+                matches.append(i)
+                break
+    return matches
+
+
+# ============================================================
 # Retrieval Function
 # ============================================================
 
 def retrieve_context(question):
-
+    # 1. Semantic FAISS candidates (original V2 settings preserved).
     query_embedding = embedding_model.encode(
-        [question],
-        convert_to_numpy=True
+        [question], convert_to_numpy=True
     )
-
-    # Must match normalization used when building the index.
     faiss.normalize_L2(query_embedding)
+    distances, indices = index.search(query_embedding, CANDIDATE_K)
 
-    # Retrieve a broader candidate set.
-    distances, indices = index.search(
-        query_embedding,
-        CANDIDATE_K
-    )
+    semantic_candidates = [
+        (int(idx), float(distance))
+        for distance, idx in zip(distances[0], indices[0])
+        if idx >= 0 and distance <= MAX_DISTANCE
+    ]
 
-# Candidate Indices: the IDs of the 5 chunks FAISS found that are most similar to the students question
-    # They are basically locations inside chunks.pkl
-# Candidate Distances: Show how semantically close each candidate is to the question. Lower is better
+    # 2. Literal phrase matches from chunks.pkl. These are allowed
+    # even if FAISS failed to rank them in its nearest candidates.
+    literal_ids = lexical_matches(question)
 
-#     print("Candidate Indices:", indices)
-#     print("Candidate Distances:", distances)
-
-    best_distance = float(distances[0][0])
-
-# Best Distance and Maximum Allowed Distance are the retrieval guardrail
-# The max allowed distance is 1.50, so if the best distance is below that, then the retrieval guardrail passes
-
-#     print(f"Best Distance: {best_distance:.4f}")
-#     print(f"Maximum Allowed Distance: {MAX_DISTANCE:.4f}")
-
-    # --------------------------------------------------------
-    # Retrieval Guardrail
-    # --------------------------------------------------------
-# This is the important addition from V6, so that when we ask an unrelated question like "Why is the sky blue?"
-# The closest chunk is over 1.50 for max distance, never gets passed to Phi-3, and we get the correct prompt returned
-
-    # If the closest chunk is still too far away,
-    # consider the question unsupported by the course content.
-    if best_distance > MAX_DISTANCE:
-
-#         print("Retrieval Guardrail: REJECTED")
-        return None
-
-    # --------------------------------------------------------
-    # Context Selection
-    # --------------------------------------------------------
-
-    selected_chunks = []
-    selected_indices = []
-    selected_distances = []
-
-    for distance, idx in zip(distances[0], indices[0]):
-
-        if idx == -1:
-            continue
-
-        if distance > MAX_DISTANCE:
-            continue
-
-        selected_chunks.append(chunks[idx])
-        selected_indices.append(int(idx))
-        selected_distances.append(float(distance))
-
-        # Stop once enough evidence has been collected.
-        if len(selected_chunks) >= CONTEXT_K:
+    # 3. Prefer exact topic mentions, but keep the original FAISS
+    # results as a fallback for questions without a literal match.
+    selected_ids = []
+    for idx in literal_ids:
+        if idx not in selected_ids:
+            selected_ids.append(idx)
+        if len(selected_ids) >= CONTEXT_K:
             break
 
-    if not selected_chunks:
+    for idx, distance in semantic_candidates:
+        if len(selected_ids) >= CONTEXT_K:
+            break
+        if idx not in selected_ids:
+            selected_ids.append(idx)
 
-#         print("Retrieval Guardrail: REJECTED")
+    if DEBUG_GROUNDING:
+        print("[DEBUG] Literal match indices:", literal_ids[:15])
+        print("[DEBUG] FAISS qualifying candidates:", semantic_candidates)
+        print("[DEBUG] Selected indices:", selected_ids)
+
+    if not selected_ids:
         return None
 
-#     print(
-#         f"Retrieval Guardrail: PASSED "
-#         f"({len(selected_chunks)} selected chunk(s))"
-#     )
-
-#     print("Selected Indices:", selected_indices)
-
-#     print(
-#         "Selected Distances:",
-#         [round(d, 4) for d in selected_distances]
-#     )
-
-    return "\n\n".join(selected_chunks)
+    return "\n\n".join(str(chunks[idx]) for idx in selected_ids)
 
 
 # ============================================================
 # Interactive Tutor Loop
 # ============================================================
 
-print("\nBIFS 614 Question and Answer Tutor - V2")
+print("\nBIFS 614 Question and Answer Tutor - V3")
 # print("Adaptive Retrieval Test")  # Developer-only message
 print("Type 'quit', 'exit', or 'q' to stop.\n")
 
 while True:
 
-    user_prompt = input("You: ").strip()
+    user_prompt = input("Student Question: ").strip()
 
     if user_prompt.lower() in ["quit", "exit", "q"]:
         print("Goodbye!")
@@ -293,7 +293,7 @@ while True:
             "I could not find the answer in the provided context."
         )
 
-        print("Response:", response)
+        print("Tutor Response:", response)
         continue
 
 
@@ -464,11 +464,30 @@ while True:
 
 
     # ========================================================
+    # Normalize unsupported-answer refusals to exact fallback.
+    # Phi-3 sometimes says "I'm sorry, the context doesn't mention..."
+    # instead of the required sentence. This handles recognizable
+    # refusals, but cannot detect every unsupported generated claim.
+    # ========================================================
+    refusal_patterns = [
+        r"\bi (?:could not|cannot|can't|am unable to) (?:find|answer|provide)\b",
+        r"\b(?:no|not enough|insufficient) (?:relevant )?information\b",
+        r"\b(?:does not|doesn't|do not) (?:mention|contain|provide|include)\b",
+        r"\b(?:there is|there's) no (?:information|mention|reference)\b",
+        r"\bnot (?:mentioned|covered|found|available) in (?:the )?(?:provided )?(?:course )?context\b",
+    ]
+    if response == FALLBACK or any(
+        re.search(pattern, response.lower()) for pattern in refusal_patterns
+    ):
+        response = FALLBACK
+
+    # ========================================================
     # Optional terminology grounding check
     # ========================================================
     # This flags terms absent from the retrieved course text. It is NOT
     # an entailment check and does not guarantee source-only answers.
-    suspect_terms = unsupported_technical_terms(response, context)
+    suspect_terms = (unsupported_technical_terms(response, context)
+                     if response != FALLBACK else [])
 
     if DEBUG_GROUNDING:
         print("\n[DEBUG] Retrieved course context:\n", context)
@@ -499,7 +518,7 @@ while True:
     # Display Answer
     # ========================================================
 
-    print("Response:", response)
+    print("Tutor Response:", response)
 
 #     print(f"Input Tokens:  {input_token_count}")
 #     print(f"Output Tokens: {output_token_count}")
