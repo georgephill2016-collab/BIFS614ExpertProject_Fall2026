@@ -80,10 +80,10 @@ print(f"Knowledge base loaded: {len(chunks)} chunks.")
 # ============================================================
 
 # Retrieve a broader set of candidate chunks from FAISS.
-CANDIDATE_K = 5
+CANDIDATE_K = 20
 
 # Number of chunks actually passed to Phi-3.
-CONTEXT_K = 2
+CONTEXT_K = 4
 
 # If even the best candidate exceeds this distance,
 # reject the question as unrelated to the course material.
