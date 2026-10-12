@@ -13,7 +13,7 @@ import time
 # The student asks a question related to the course material in "Student Question:" Prompt
 # The "Tutor Response:" answers students question with relevant course material
 # The Input Tokens, Generation Time, Candidate Distances and Indices,
-# and Retrieved Context Chunks are all hidden from the student in comments 
+# and Retrieved Context Chunks are all hidden from the student 
 
 # Goal:
 # Improve retrieval grounding and prevent Phi-3 from answering
