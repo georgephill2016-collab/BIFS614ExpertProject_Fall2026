@@ -1,4 +1,4 @@
-"""BIFS 614 guided tutor V8-6: stronger evidence selection, same student menus.
+"""BIFS 614 guided tutor V8-7: definition-first, topic-specific lesson progression.
 
 Run from repository root: python LLMscript/CourseAgentSD.py
 Requires knowledge.index and chunks.pkl built from the course knowledge.txt.
@@ -76,65 +76,88 @@ def split_sentences(text):
 
 
 def build_steps(topic, results):
-    """Build distinct lesson concepts with surrounding evidence, not isolated one-liners.
+    """Make a short, ordered lesson from course text; do not invent concepts.
 
-    A direct 'X is ...' definition is preferred for the opening step if available.
-    Remaining concepts are ranked by semantic relevance and deduplicated.
+    Prefer an explicit definition, then select different instructional themes.
+    Each step retains its actual source excerpt for the generator and /debug.
     """
     if not results:
         return []
+
+    topic_lower = topic.lower().strip()
+    topic_words = [w for w in re.findall(r"[a-z0-9]+", topic_lower) if len(w) >= 4]
     candidates = []
     seen = set()
     for source_id, distance, passage in results:
         sentences = split_sentences(clean_source(passage))
         for pos, sentence in enumerate(sentences):
-            if len(sentence.split()) < 7 or len(sentence) > 420:
+            if not (7 <= len(sentence.split()) <= 75):
                 continue
-            # Avoid using casual exhortations or raw code as the basis of a lesson.
             if re.search(r"\b(check out|save you|click here|see also)\b", sentence, re.I):
                 continue
             if sentence.count("(") > 3 or sentence.count(";") > 3:
                 continue
-            key = re.sub(r"\W+", "", sentence.lower())
-            if key in seen:
+            normalized = normalize(sentence)
+            if normalized in seen:
                 continue
-            seen.add(key)
-            # Include adjacent course sentences so the model is not asked to
-            # invent context from a single isolated statement.
-            left = max(0, pos - 1)
-            right = min(len(sentences), pos + 3)
-            context = " ".join(sentences[left:right])[:1050]
-            candidates.append({"idea": sentence, "evidence": context,
+            seen.add(normalized)
+            # Nearby sentences can clarify a reference, but keep the key sentence first.
+            nearby = sentences[pos + 1:pos + 3]
+            evidence = " ".join([sentence] + nearby)[:900]
+            candidates.append({"idea": sentence, "evidence": evidence,
                                "source_id": source_id, "distance": distance})
     if not candidates:
         return []
 
-    ideas = [c["idea"] for c in candidates]
-    vectors = encoder.encode(ideas, convert_to_numpy=True, normalize_embeddings=True)
-    topic_vector = encoder.encode([topic], convert_to_numpy=True, normalize_embeddings=True)[0]
-    scores = vectors @ topic_vector
-    topic_terms = [w for w in re.findall(r"[a-z0-9]+", topic.lower()) if len(w) > 3]
-    definition_pattern = re.compile(
-        r"\b(?:" + "|".join(re.escape(w) for w in topic_terms) + r")\b\s+(?:is|are|refers to|means)\b",
-        re.I,
-    ) if topic_terms else None
+    vectors = encoder.encode([c["idea"] for c in candidates],
+                             convert_to_numpy=True, normalize_embeddings=True)
+    topic_vector = encoder.encode([topic], convert_to_numpy=True,
+                                  normalize_embeddings=True)[0]
+    similarities = vectors @ topic_vector
 
-    order = sorted(range(len(candidates)), key=lambda i: float(scores[i]), reverse=True)
-    definitions = [i for i in order if definition_pattern and definition_pattern.search(ideas[i])]
-    if definitions:
-        first = max(definitions, key=lambda i: (float(scores[i]), -candidates[i]["distance"]))
-        order.remove(first)
-        order.insert(0, first)
+    # Find an explicit statement such as "NOTE: Bioconductor is a set ...".
+    # Prefer it over a semantically close sentence about installation.
+    definition_indices = []
+    for i, c in enumerate(candidates):
+        sentence = c["idea"]
+        if any(re.search(r"\b" + re.escape(w) +
+                         r"\b\s+(?:is|are|refers to|means)\b", sentence, re.I)
+               for w in topic_words):
+            definition_indices.append(i)
 
     selected = []
-    for i in order:
+    if definition_indices:
+        first = max(definition_indices,
+                    key=lambda i: (float(similarities[i]), -candidates[i]["distance"]))
+        selected.append(first)
+
+    # Prefer diverse lesson themes in a teaching order, not nearest chunks alone.
+    themes = [
+        r"\b(?:purpose|useful|used for|helps|functions|package|library)\b",
+        r"\b(?:install|installed|installation|manager)\b",
+        r"\b(?:load|loading|library command|in memory)\b",
+        r"\b(?:sequence|dna|example|create|variable)\b",
+    ]
+    for pattern in themes:
+        eligible = [i for i, c in enumerate(candidates)
+                    if i not in selected
+                    and re.search(pattern, c["idea"], re.I)
+                    and float(similarities[i]) >= 0.20
+                    and not any(float(vectors[i] @ vectors[j]) > 0.73 for j in selected)]
+        if eligible and len(selected) < MAX_STEPS:
+            selected.append(max(eligible, key=lambda i: float(similarities[i])))
+
+    # Fill remaining slots with distinct, relevant facts only.
+    for i in sorted(range(len(candidates)),
+                    key=lambda i: float(similarities[i]), reverse=True):
         if len(selected) >= MAX_STEPS:
             break
-        if float(scores[i]) < 0.26:
+        if i in selected or float(similarities[i]) < 0.30:
             continue
-        if any(float(vectors[i] @ vectors[j]) > 0.76 for j in selected):
+        if any(float(vectors[i] @ vectors[j]) > 0.73 for j in selected):
             continue
         selected.append(i)
+
     return [candidates[i] for i in selected]
 
 
@@ -146,7 +169,7 @@ benefits, or technical claims not explicitly supported by EVIDENCE.
 If the evidence is too thin to explain the requested point, say exactly:
 {FALLBACK}
 Speak to the learner naturally. Never mention chunks, source lines, or documents.
-Follow TASK. Use at most 65 words and finish your final sentence. Do not ask
+Follow TASK. Use at most 75 words and finish your final sentence. Do not ask
 questions unless TASK explicitly requests a practice question.
 <|end|>
 <|user|>
@@ -175,6 +198,10 @@ TASK: {task}
         print(f"Generation: {time.time() - start:.1f}s; {len(tokens)} tokens")
     if re.search(r"\b(?:line|chunk|passage)\s*\d+\b", output, re.I):
         return FALLBACK
+    # A clipped sentence is preferable to detect rather than display as complete.
+    if output and not re.search(r"[.!?][\"\']?$", output):
+        if DEBUG:
+            print("Warning: output may be truncated")
     return output or FALLBACK
 
 
@@ -189,17 +216,38 @@ def too_similar(a, b):
 
 def teach(state, detailed=False):
     step = state["steps"][state["step"]]
+    # On the first step, use the course's own explicit definition directly.
+    # This prevents Phi-3 from expanding a simple definition with unsupported claims.
+    if state["step"] == 0 and not detailed:
+        topic_words = [w for w in re.findall(r"[a-z0-9]+", state["topic"].lower())
+                       if len(w) >= 4]
+        definition = step["idea"]
+        if any(re.search(r"\b" + re.escape(w) +
+                         r"\b\s+(?:is|are|refers to|means)\b", definition, re.I)
+               for w in topic_words):
+            # Drop a preceding course-note label, retaining original wording.
+            definition = re.sub(r"^.*?(?=\b(?:" + "|".join(map(re.escape, topic_words)) +
+                                r")\b\s+(?:is|are|refers to|means)\b)",
+                                "", definition, flags=re.I)
+            answer = definition.strip()
+            print("\nTutor:", answer)
+            state["explanation"] = answer
+            return
+
     task = (
-        "Explain the SAME idea more clearly using only the EVIDENCE, in 2-3 sentences. "
-        "Do not add a new topic or ask a question."
+        "Explain the SAME idea more clearly in 2-3 short sentences using only "
+        "the evidence. Do not introduce another idea, installation steps, or a question."
         if detailed else
-        "Teach the central IDEA in 2-3 clear sentences, using only EVIDENCE. "
-        "Start with a definition if the IDEA defines the topic. No question."
+        "Explain ONLY the IDEA in 2-3 simple teaching sentences. "
+        "Use the evidence literally: no additional benefits, examples, or claims. "
+        "Do not restate earlier lesson steps or ask a question."
     )
-    answer = generate(state["topic"], step["evidence"],
-                      task, f"IDEA: {step['idea']}")
+    answer = generate(state["topic"], step["evidence"], task,
+                      f"IDEA: {step['idea']}\nALREADY TAUGHT: {state.get('previous_ideas', [])}")
     print("\nTutor:", answer)
     state["explanation"] = answer
+    if not detailed:
+        state.setdefault("previous_ideas", []).append(step["idea"])
 
 
 def ask_practice(state):
@@ -277,7 +325,7 @@ def lesson(mode):
         return
     state = {"topic": topic, "step": 0, "steps": steps,
              "explanation": "", "asked_questions": [], "question_steps": set(),
-             "retrieval": results}
+             "retrieval": results, "previous_ideas": []}
     if DEBUG:
         print(f"Prepared {len(steps)} evidence-backed steps")
     teach(state)
@@ -299,6 +347,7 @@ def lesson(mode):
                     print(f"  Step {n} (chunk {step['source_id']}): {step['idea']}")
                 print("Current step evidence:", steps[state["step"]]["evidence"])
                 print("Previous questions:", state["asked_questions"])
+                print("Already taught:", state["previous_ideas"])
             continue
         if option == "1":
             if state["step"] + 1 >= len(steps):
