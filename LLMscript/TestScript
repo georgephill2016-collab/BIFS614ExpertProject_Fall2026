@@ -1,4 +1,4 @@
-# Saras Question and Answer Script
+# BIFS 614 Question and Answer Tutor - V2
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from sentence_transformers import SentenceTransformer
@@ -6,9 +6,10 @@ import faiss
 import pickle
 import torch
 import time
+import re
 
 # ============================================================
-# CourseAgentQuestionandAnswer
+# CourseAgentQuestionandAnswerV2
 # BIFS 614 Tutor Mode
 #
 # V7 Goal:
@@ -47,7 +48,7 @@ model = AutoModelForCausalLM.from_pretrained(
 model.eval()
 
 print("Model loaded successfully.")
-print(f"Model device: {model.device}")
+# print(f"Model device: {model.device}")
 
 # Phi-3 uses <|end|> to mark the end of a turn.
 END_TOKEN_ID = tokenizer.convert_tokens_to_ids("<|end|>")
@@ -75,7 +76,7 @@ index = faiss.read_index("knowledge.index")
 with open("chunks.pkl", "rb") as f:
     chunks = pickle.load(f)
 
-print(f"Knowledge base loaded: {len(chunks)} chunks.")
+# print(f"Knowledge base loaded: {len(chunks)} chunks.")
 
 
 # ============================================================
@@ -91,6 +92,65 @@ CONTEXT_K = 2
 # If even the best candidate exceeds this distance,
 # reject the question as unrelated to the course material.
 MAX_DISTANCE = 1.50
+
+
+# ============================================================
+# Optional grounding diagnostics
+# ============================================================
+# Students do not see diagnostic output by default.
+# Set True while testing to inspect retrieved evidence and warnings.
+DEBUG_GROUNDING = False
+
+# If True, a response containing an unfamiliar technical term is
+# withheld rather than displayed. This is intentionally OFF by default:
+# the check is heuristic and can reject valid paraphrases.
+STRICT_TERM_CHECK = False
+
+FALLBACK = "I could not find the answer in the provided context."
+
+# Common words are not considered technical terms by this heuristic.
+# This is not a claim-level factual verification system.
+COMMON_WORDS = {
+    "because", "between", "different", "information", "important",
+    "provides", "provided", "question", "response", "example",
+    "examples", "includes", "including", "similar", "specific",
+    "process", "processes", "elements", "individual", "compared",
+    "comparison", "efficient", "efficiency", "structure", "structures",
+    "organizes", "organize", "organized", "organizing", "distance",
+    "distances", "repeated", "repeatedly", "closest", "starting",
+    "results", "resulting", "allows", "allowing", "requires",
+    "require", "required", "however", "therefore", "through",
+    "without", "within", "related", "represent", "represents",
+    "representing", "number", "numbers", "dataset", "datasets",
+    "contains", "contain", "containing", "relevant", "meaning",
+    "usually", "typically", "according", "material", "lecture",
+    "course", "context", "describes", "described", "explain",
+    "explains", "analysis", "analyzing", "technique", "techniques",
+    "method", "methods", "beginning", "together", "another",
+    "original", "possible", "computing", "computed", "computational",
+    "following", "several", "single", "rather", "instead", "given",
+    "using", "which", "their", "these", "those", "where", "while",
+    "after", "before", "until", "every", "first", "second",
+}
+
+
+def unsupported_technical_terms(answer, context):
+    """Heuristic warning: long answer words absent from retrieved context.
+
+    Does NOT establish whether an answer is true or entailed.
+    """
+    source_words = set(re.findall(r"[a-zA-Z]+", context.lower()))
+    answer_words = set(re.findall(r"[a-zA-Z]+", answer.lower()))
+    unknown = []
+    for word in sorted(answer_words):
+        if len(word) < 9 or word in COMMON_WORDS:
+            continue
+        # Accept simple inflection changes when a matching root exists.
+        roots = {word, word.rstrip("s"), word.removesuffix("ing"),
+                 word.removesuffix("ed"), word.removesuffix("ly")}
+        if not any(root in source_words for root in roots if root):
+            unknown.append(word)
+    return unknown
 
 
 # ============================================================
@@ -189,7 +249,7 @@ def retrieve_context(question):
 # Interactive Tutor Loop
 # ============================================================
 
-print("\nBIFS 614 Question and Answer Tutor")
+print("\nBIFS 614 Question and Answer Tutor - V2")
 # print("Adaptive Retrieval Test")  # Developer-only message
 print("Type 'quit', 'exit', or 'q' to stop.\n")
 
@@ -268,7 +328,13 @@ while True:
     Answer the QUESTION using only claims explicitly supported by the
     COURSE CONTEXT.
 
-    You may summarize or paraphrase the COURSE CONTEXT.
+    You may summarize or paraphrase the COURSE CONTEXT, but do not
+    introduce additional technical terminology, labels, named concepts,
+    or examples unless those terms or concepts appear in COURSE CONTEXT.
+
+    Before answering, silently check each sentence against COURSE CONTEXT.
+    Remove any statement that cannot be supported by the supplied text.
+    Do not mention your checks or the words COURSE CONTEXT in the answer.
 
     Do not add facts from your pretrained knowledge, even if those
     facts are correct.
@@ -290,8 +356,12 @@ while True:
 
     I could not find the answer in the provided context.
 
-    Give a direct and concise answer. Stop when the QUESTION has been
-    answered.
+    Prefer the terminology used in the lectures. For example, if the
+    context describes a tree, call it a tree; do not introduce another
+    technical name for it unless that name appears in the context.
+
+    Give a direct answer in 1-3 sentences. Stop when the QUESTION has
+    been answered.
     <|end|>
 
     <|user|>
@@ -392,6 +462,27 @@ while True:
             "I could not find the answer in the provided context."
         )
 
+
+    # ========================================================
+    # Optional terminology grounding check
+    # ========================================================
+    # This flags terms absent from the retrieved course text. It is NOT
+    # an entailment check and does not guarantee source-only answers.
+    suspect_terms = unsupported_technical_terms(response, context)
+
+    if DEBUG_GROUNDING:
+        print("\n[DEBUG] Retrieved course context:\n", context)
+        if suspect_terms:
+            print("[DEBUG] Potentially unsupported terminology:",
+                  ", ".join(suspect_terms))
+        else:
+            print("[DEBUG] No unfamiliar long terms detected; factual"
+                  " grounding is NOT guaranteed.")
+
+    if STRICT_TERM_CHECK and suspect_terms:
+        if DEBUG_GROUNDING:
+            print("[DEBUG] Answer withheld by heuristic term check.")
+        response = FALLBACK
 
     # ========================================================
     # Token Statistics
