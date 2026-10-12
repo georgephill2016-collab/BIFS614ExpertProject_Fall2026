@@ -15,7 +15,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 MODEL_NAME = "microsoft/Phi-3-mini-4k-instruct"
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 FALLBACK = "I could not find the answer in the provided context."
-CANDIDATE_K = 10
+CANDIDATE_K = 20
 CONTEXT_K = 4
 MAX_DISTANCE = 1.50
 MAX_NEW_TOKENS = 210
@@ -45,22 +45,51 @@ if index.ntotal != len(chunks):
 print(f"Loaded {len(chunks)} course chunks.")
 
 
+
 def retrieve(query):
     vector = embedder.encode([query], convert_to_numpy=True)
     faiss.normalize_L2(vector)
+
     distances, indices = index.search(vector, CANDIDATE_K)
+
+    # Find exact topic matches across the indexed course material.
+    query_normalized = re.sub(r"\s+", " ", query.lower()).strip()
+    exact_matches = []
+
+    for idx, chunk in enumerate(chunks):
+        passage = str(chunk)
+        normalized = re.sub(r"\s+", " ", passage.lower())
+        if query_normalized in normalized:
+            exact_matches.append((idx, passage))
+
     selected = []
+    used = set()
+
+    # Prioritize passages that explicitly mention the topic.
+    for idx, passage in exact_matches[:CONTEXT_K]:
+        selected.append((idx, None, passage))
+        used.add(idx)
+
+    # Fill remaining slots with FAISS results.
     for distance, idx in zip(distances[0], indices[0]):
-        if idx < 0 or float(distance) > MAX_DISTANCE:
+        idx = int(idx)
+        if idx < 0 or idx in used or float(distance) > MAX_DISTANCE:
             continue
-        selected.append((int(idx), float(distance), str(chunks[idx])))
-        if len(selected) == CONTEXT_K:
+
+        selected.append((idx, float(distance), str(chunks[idx])))
+        used.add(idx)
+
+        if len(selected) >= CONTEXT_K:
             break
+
     if DEBUG:
-        print("Retrieved:", [(i, round(d, 4)) for i, d, _ in selected])
-        for i, _, passage in selected:
-            print(f"[Chunk {i}]\n{passage}\n")
+        print("Retrieved passages:")
+        for idx, distance, passage in selected:
+            source = "EXACT MATCH" if distance is None else f"FAISS {distance:.4f}"
+            print(f"\n[Chunk {idx}] {source}\n{passage}\n")
+
     return "\n\n".join(p for _, _, p in selected) if selected else None
+
 
 
 def generate(context, topic, task, previous_teaching="", question="", answer=""):
