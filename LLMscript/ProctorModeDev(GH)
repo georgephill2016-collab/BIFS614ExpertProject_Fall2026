@@ -1,0 +1,510 @@
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from sentence_transformers import SentenceTransformer
+import faiss
+import pickle
+import torch
+import time
+
+print(
+    f"GPU: {torch.cuda.get_device_name(0)}"
+    if torch.cuda.is_available()
+    else "No GPU"
+)
+
+# =====================================================
+# MODEL
+# =====================================================
+
+MODEL_NAME = "microsoft/Phi-3-mini-4k-instruct"
+
+print("Loading Phi-3...")
+
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+
+model = AutoModelForCausalLM.from_pretrained(
+    MODEL_NAME,
+    device_map="auto"
+)
+
+model.eval()
+
+print("Model loaded successfully.")
+print(f"Model Device: {model.device}")
+
+# =====================================================
+# EMBEDDINGS
+# =====================================================
+
+print("Loading embedding model...")
+
+embedding_model = SentenceTransformer(
+    "sentence-transformers/all-MiniLM-L6-v2"
+)
+
+print("Embedding model loaded.")
+
+# =====================================================
+# VECTOR DATABASE
+# =====================================================
+
+print("Loading FAISS index...")
+
+index = faiss.read_index("knowledge.index")
+
+with open("chunks.pkl", "rb") as f:
+    chunks = pickle.load(f)
+
+print("Knowledge base loaded.")
+
+# =====================================================
+# SETTINGS
+# =====================================================
+
+TOP_K = 5
+
+score = 0
+questions_asked = 0
+
+# =====================================================
+# RETRIEVAL
+# =====================================================
+
+def retrieve_context(question, top_k=5):
+
+    query_embedding = embedding_model.encode(
+        [question],
+        convert_to_numpy=True
+    )
+
+    faiss.normalize_L2(query_embedding)
+
+    distances, indices = index.search(
+        query_embedding,
+        top_k
+    )
+
+    print("\nRetrieved Chunks")
+    print("Indices:", indices)
+    print("Distances:", distances)
+
+    retrieved_chunks = []
+
+    for idx in indices[0]:
+        if idx != -1:
+            retrieved_chunks.append(chunks[idx])
+
+    return "\n\n".join(retrieved_chunks)
+
+
+# =====================================================
+# GENERATION HELPER
+# =====================================================
+
+def generate_text(
+    prompt,
+    max_tokens=150,
+    temperature=0.2,
+    do_sample=False
+):
+
+    input_ids = tokenizer.encode(
+        prompt,
+        return_tensors="pt"
+    ).to(model.device)
+
+    with torch.no_grad():
+
+        output_ids = model.generate(
+            input_ids,
+            max_new_tokens=max_tokens,
+            temperature=temperature,
+            do_sample=do_sample,
+            top_p=0.9,
+            repetition_penalty=1.1,
+            pad_token_id=tokenizer.eos_token_id
+        )
+
+    generated_ids = output_ids[0][input_ids.shape[1]:]
+
+    response = tokenizer.decode(
+        generated_ids,
+        skip_special_tokens=True,
+        clean_up_tokenization_spaces=False
+    )
+
+    return response.strip()
+
+
+# =====================================================
+# PROCTOR QUESTION GENERATOR
+# =====================================================
+
+def generate_quiz_question(context):
+
+    prompt = f"""
+<|system|>
+You are a technical instructor.
+
+Create exactly one quiz question using ONLY
+the provided context.
+
+Rules:
+- Ask about an important concept.
+- Do not provide the answer.
+- Output only the question.
+<|end|>
+
+<|user|>
+Context:
+
+{context}
+
+<|end|>
+
+<|assistant|>
+"""
+
+    return generate_text(
+        prompt,
+        max_tokens=80,
+        temperature=0.7,
+        do_sample=True
+    )
+
+
+# =====================================================
+# PROCTOR ANSWER EVALUATOR
+# =====================================================
+
+def evaluate_answer(
+    question,
+    answer,
+    context
+):
+
+    prompt = f"""
+<|system|>
+You are a certification examiner.
+
+Evaluate the student's answer using ONLY
+the supplied context.
+
+Format:
+
+Grade: Correct
+
+OR
+
+Grade: Incorrect
+
+Feedback:
+(short explanation)
+<|end|>
+
+<|user|>
+
+Context:
+{context}
+
+Question:
+{question}
+
+Student Answer:
+{answer}
+
+<|end|>
+
+<|assistant|>
+"""
+
+    return generate_text(
+        prompt,
+        max_tokens=150,
+        temperature=0.1,
+        do_sample=False
+    )
+
+
+# =====================================================
+# CHAT RESPONSE
+# =====================================================
+
+def answer_question(
+    user_prompt,
+    context
+):
+
+    final_prompt = f"""
+<|system|>
+You are a question-answering assistant.
+
+Use ONLY the supplied context.
+
+Rules:
+
+1. Do not use outside knowledge.
+
+2. If answer exists in context,
+answer normally.
+
+3. If answer is not in context,
+reply exactly:
+
+I could not find the answer in the provided context.
+
+<|end|>
+
+<|user|>
+
+Context:
+
+{context}
+
+Question:
+
+{user_prompt}
+
+<|end|>
+
+<|assistant|>
+"""
+
+    input_ids = tokenizer.encode(
+        final_prompt,
+        return_tensors="pt"
+    ).to(model.device)
+
+    input_token_count = input_ids.shape[1]
+
+    start = time.time()
+
+    with torch.no_grad():
+
+        output_ids = model.generate(
+            input_ids,
+            max_new_tokens=350,
+            do_sample=True,
+            temperature=0.2,
+            top_p=0.9,
+            repetition_penalty=1.1,
+            pad_token_id=tokenizer.eos_token_id
+        )
+
+    generation_time = time.time() - start
+
+    generated_ids = output_ids[0][input_token_count:]
+
+    response = tokenizer.decode(
+        generated_ids,
+        skip_special_tokens=True,
+        clean_up_tokenization_spaces=False
+    )
+
+    response = response.strip()
+
+    if "\n" in response:
+        response = response.split("\n")[0]
+
+    for tag in [
+        "<|user|>",
+        "<|assistant|>",
+        "<|system|>",
+        "<|end|>"
+    ]:
+
+        if tag in response:
+            response = response.split(tag)[0].strip()
+
+    output_tokens = len(generated_ids)
+
+    return (
+        response,
+        input_token_count,
+        output_tokens,
+        generation_time
+    )
+
+
+# =====================================================
+# MODE SELECTION
+# =====================================================
+
+print("\n==============================")
+print("Select Mode")
+print("==============================")
+print("1 = Chat Assistant")
+print("2 = Proctor Mode")
+
+choice = input("\nChoice: ").strip()
+
+PROCTOR_MODE = choice == "2"
+
+print("\nType 'quit', 'exit', or 'q' to stop.\n")
+
+# =====================================================
+# MAIN LOOP
+# =====================================================
+
+while True:
+
+    # =====================================
+    # PROCTOR MODE
+    # =====================================
+
+    if PROCTOR_MODE:
+
+        topic = input(
+            "\nStudy Topic: "
+        ).strip()
+
+        if topic.lower() in [
+            "quit",
+            "exit",
+            "q"
+        ]:
+
+            print(
+                f"\nFinal Score: "
+                f"{score}/{questions_asked}"
+            )
+
+            break
+
+        retrieval_start = time.time()
+
+        context = retrieve_context(
+            topic,
+            TOP_K
+        )
+
+        retrieval_time = (
+            time.time() -
+            retrieval_start
+        )
+
+        print(
+            f"\nContext Length: "
+            f"{len(context)} chars"
+        )
+
+        print(
+            f"Retrieval Time: "
+            f"{retrieval_time:.2f} sec"
+        )
+
+        question = generate_quiz_question(
+            context
+        )
+
+        print("\n====================")
+        print("PROCTOR QUESTION")
+        print("====================\n")
+
+        print(question)
+
+        student_answer = input(
+            "\nYour Answer: "
+        ).strip()
+
+        result = evaluate_answer(
+            question,
+            student_answer,
+            context
+        )
+
+        questions_asked += 1
+
+        if "grade: correct" in result.lower():
+            score += 1
+
+        print("\nEvaluation")
+        print("------------------")
+        print(result)
+
+        print(
+            f"\nCurrent Score: "
+            f"{score}/{questions_asked}"
+        )
+
+    # =====================================
+    # CHAT MODE
+    # =====================================
+
+    else:
+
+        user_prompt = input(
+            "\nYou: "
+        ).strip()
+
+        if user_prompt.lower() in [
+            "quit",
+            "exit",
+            "q"
+        ]:
+
+            print("Goodbye!")
+            break
+
+        if not user_prompt:
+            continue
+
+        retrieval_start = time.time()
+
+        context = retrieve_context(
+            user_prompt,
+            TOP_K
+        )
+
+        retrieval_time = (
+            time.time() -
+            retrieval_start
+        )
+
+        print(
+            "\nContext Length:",
+            len(context)
+        )
+
+        print(
+            "Retrieval:",
+            round(retrieval_time, 2),
+            "seconds"
+        )
+
+        (
+            response,
+            input_tokens,
+            output_tokens,
+            generation_time
+        ) = answer_question(
+            user_prompt,
+            context
+        )
+
+        total_tokens = (
+            input_tokens +
+            output_tokens
+        )
+
+        print("\nResponse:")
+        print(response)
+
+        print(
+            f"\nInput Tokens: "
+            f"{input_tokens}"
+        )
+
+        print(
+            f"Output Tokens: "
+            f"{output_tokens}"
+        )
+
+        print(
+            f"Total Tokens: "
+            f"{total_tokens}"
+        )
+
+        print(
+            f"Generation Time: "
+            f"{generation_time:.2f} sec"
+        )
