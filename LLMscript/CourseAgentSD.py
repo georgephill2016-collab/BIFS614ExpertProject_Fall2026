@@ -15,8 +15,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 MODEL_NAME = "microsoft/Phi-3-mini-4k-instruct"
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 FALLBACK = "I could not find the answer in the provided context."
-CANDIDATE_K = 5
-CONTEXT_K = 2
+CANDIDATE_K = 10
+CONTEXT_K = 4
 MAX_DISTANCE = 1.50
 MAX_NEW_TOKENS = 210
 MAX_INPUT_TOKENS = 3800
