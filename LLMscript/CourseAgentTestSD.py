@@ -1,5 +1,4 @@
-"""BIFS 614 student-controlled Guided Tutor (V8-3, derived from V7 retrieval).
-Run from repository root: python LLMscript/CourseAgentV8-3_FromV7_GuidedTutor.py
+"""BIFS 614 student-controlled Guided Tutor (V8-3, derived from V7+V8 retrieval).
 Requires knowledge.index and chunks.pkl in repository root.
 """
 import pickle
