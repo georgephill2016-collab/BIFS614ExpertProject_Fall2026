@@ -253,7 +253,7 @@ def retrieve_context(question):
 # Interactive Tutor Loop
 # ============================================================
 
-print("\nBIFS 614 Question and Answer Tutor - V2")
+print("\nBIFS 614 Question and Answer Tutor")
 # print("Adaptive Retrieval Test")  # Developer-only message
 print("Type 'quit', 'exit', or 'q' to stop.\n")
 
