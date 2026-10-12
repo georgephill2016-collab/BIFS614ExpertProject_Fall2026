@@ -1,7 +1,7 @@
-# Revised tutor mode: preserves GPU/FAISS design while removing forced quiz prompts.
+# Revised tutor mode: supports CPU or CUDA with FAISS retrieval and no forced quiz prompts.
 # Note: similarity search and prompting alone cannot guarantee zero outside-knowledge claims.
 
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from sentence_transformers import SentenceTransformer
 import faiss
 import pickle
@@ -14,30 +14,10 @@ logging.getLogger("torch.utils.flop_counter").setLevel(logging.ERROR)
 
 print("Python:", sys.version.split()[0])
 print("PyTorch:", torch.__version__)
-print("PyTorch CUDA build:", torch.version.cuda)
-print("CUDA available:", torch.cuda.is_available())
-
-if not torch.cuda.is_available():
-    raise RuntimeError(
-        "\nPyTorch cannot access your NVIDIA GPU. This usually means the CPU-only "
-        "PyTorch package is installed in this virtual environment.\n\n"
-        "In the PyCharm terminal, run:\n"
-        r'.\.venv\Scripts\python.exe -m pip uninstall torch torchvision torchaudio -y'
-        "\n"
-        r'.\.venv\Scripts\python.exe -m pip install torch torchvision torchaudio '
-        r'--index-url https://download.pytorch.org/whl/cu126'
-        "\n\nThen verify with:\n"
-        r'.\.venv\Scripts\python.exe -c "import torch; '
-        r'print(torch.__version__); print(torch.version.cuda); '
-        r'print(torch.cuda.is_available()); '
-        r'print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else '
-        r"'NO GPU')\""
-    )
-
-GPU_DEVICE = "cuda:0"
-torch.cuda.set_device(0)
-print("GPU:", torch.cuda.get_device_name(0))
-print(f"GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+print("Using device:", DEVICE)
+if DEVICE == "cuda":
+    print("GPU:", torch.cuda.get_device_name(0))
 
 MODEL_NAME = "microsoft/Phi-3-mini-4k-instruct"
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
@@ -55,37 +35,19 @@ tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 if tokenizer.pad_token_id is None:
     tokenizer.pad_token_id = tokenizer.eos_token_id
 
-print("Loading Phi-3 on the GPU in 4-bit mode...")
-quantization_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_use_double_quant=True,
-    bnb_4bit_compute_dtype=torch.float16,
-)
-
+print(f"Loading Phi-3 on {DEVICE} (without 4-bit quantization)...")
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME,
-    device_map={"": 0},
-    quantization_config=quantization_config,
-    dtype=torch.float16,
+    torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
     attn_implementation="eager",
     trust_remote_code=False,
 )
+model.to(DEVICE)
 model.eval()
+print("Model loaded successfully on:", next(model.parameters()).device)
 
-model_device = next(model.parameters()).device
-if model_device.type != "cuda":
-    raise RuntimeError(f"Phi-3 loaded on {model_device} instead of the GPU.")
-
-print("Model loaded successfully.")
-print("Model device:", model_device)
-print(f"Allocated GPU memory: {torch.cuda.memory_allocated(0) / 1024**3:.2f} GB")
-
-print("Loading embedding model on GPU...")
-embedding_model = SentenceTransformer(
-    EMBEDDING_MODEL_NAME,
-    device=GPU_DEVICE,
-)
+print("Loading embedding model on:", DEVICE)
+embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME, device=DEVICE)
 print("Embedding model device:", embedding_model.device)
 
 index = faiss.read_index("knowledge.index")
@@ -236,7 +198,7 @@ LEARNER MESSAGE
 
         input_token_count = inputs["input_ids"].shape[-1]
         if input_token_count <= MAX_INPUT_TOKENS:
-            return {key: value.to(GPU_DEVICE) for key, value in inputs.items()}, input_token_count
+            return {key: value.to(DEVICE) for key, value in inputs.items()}, input_token_count
 
         raise ValueError("Prompt exceeds MAX_INPUT_TOKENS; reduce context size.")
 
@@ -282,7 +244,7 @@ def print_menu():
     print("\nCourse Tutor Menu")
     print("1. Tutor")
     print("2. Reset lesson")
-    print("3. GPU status")
+    print("3. Device status")
     print("4. Quit")
 
 
@@ -304,9 +266,10 @@ while True:
             print("Lesson reset.")
             continue
         if choice == "3":
-            print("GPU:", torch.cuda.get_device_name(0))
-            print(f"Allocated: {torch.cuda.memory_allocated(0) / 1024**3:.2f} GB")
-            print(f"Reserved:  {torch.cuda.memory_reserved(0) / 1024**3:.2f} GB")
+            print("Device:", DEVICE)
+            if DEVICE == "cuda":
+                print(f"Allocated: {torch.cuda.memory_allocated(0) / 1024**3:.2f} GB")
+                print(f"Reserved:  {torch.cuda.memory_reserved(0) / 1024**3:.2f} GB")
             continue
         if choice != "1":
             print("Please enter 1, 2, 3, or 4.")
@@ -385,4 +348,3 @@ while True:
         ]
     )
     history = history[-6:]
-
