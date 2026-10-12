@@ -1,5 +1,5 @@
 # Revised tutor mode: supports CPU or CUDA with FAISS retrieval and no forced quiz prompts.
-# Conservative grounding: validated definition clauses + lexical answer screen.
+# Conservative grounding: validated definitions, source-extractive follow-ups, lexical answer screen.
 # Lexical overlap is not proof of entailment; manual validation remains necessary.
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -26,11 +26,11 @@ MODEL_NAME = "microsoft/Phi-3-mini-4k-instruct"
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 CANDIDATE_K = 10
-CONTEXT_K = 2
+CONTEXT_K = 4
 MAX_DISTANCE = 1.50
 MAX_NEW_TOKENS = 150
 MAX_INPUT_TOKENS = 3000
-MAX_CONTEXT_TOKENS = 850
+MAX_CONTEXT_TOKENS = 1100
 MAX_HISTORY_MESSAGES = 0
 
 print("Loading tokenizer...")
@@ -265,6 +265,71 @@ def contextualize_question(question, previous_question):
     return question
 
 
+def topic_from_question(question):
+    """Keep a clean topic, rather than accumulating previous prompts."""
+    question = question.strip()
+    match = re.match(r"(?:what is|what are|define|explain|tell me about)\s+(.+?)[?.!]*$", question, re.I)
+    return match.group(1).strip() if match else question
+
+
+def followup_kind(message):
+    message = message.strip().lower().rstrip("?.!")
+    if message in ("tell me more", "explain further", "explain that further", "can you explain that further", "can you explain it further", "can you elaborate", "elaborate"):
+        return "expand"
+    if message in ("give me an example", "can you give me an example", "show me an example", "for example"):
+        return "example"
+    return None
+
+
+def extract_supported_expansion(topic, selected, kind="expand"):
+    """Return only intact source sentences, never an LLM-created factual paraphrase.
+
+    This intentionally favors traceable excerpts over fluent synthesis. It does
+    not establish semantic entailment for model-generated responses elsewhere.
+    """
+    term = topic.lower().strip().rstrip("?.!")
+    if not term or len(term) > 80:
+        return None
+    term_words = content_words(term)
+    candidates = []
+    seen = set()
+    for item in selected:
+        text = re.sub(r"\s+", " ", item["text"]).strip()
+        # Split at sentence punctuation; skip fragments and code-heavy snippets.
+        for sentence in re.split(r"(?<=[.!?])\s+(?=[A-Z])", text):
+            sentence = sentence.strip()
+            words = content_words(sentence)
+            if not 9 <= len(sentence.split()) <= 55 or not words:
+                continue
+            if re.search(r"(?:^|\s)(?:line\s+\d+|click|run button|console pane|if \(|install\.packages|library\()", sentence, re.I):
+                continue
+            if kind == "example":
+                relevant = any(x in sentence.lower() for x in ("example", "for instance", "biostrings", "dnastring", "suffix", "sequence"))
+            else:
+                relevant = term in sentence.lower() or bool(term_words & words)
+            if not relevant:
+                continue
+            norm = re.sub(r"[^a-z0-9]", "", sentence.lower())
+            if norm in seen:
+                continue
+            seen.add(norm)
+            score = 3 * (term in sentence.lower()) + len(term_words & words)
+            score += 2 if kind == "example" and re.search(r"example|for instance", sentence, re.I) else 0
+            score -= 2 if re.search(r"\binstall|\bclick|\bline\s+\d+", sentence, re.I) else 0
+            candidates.append((score, -len(sentence), sentence))
+    if not candidates:
+        return None
+    candidates.sort(reverse=True)
+    # Avoid returning the same definition the student already received.
+    for _, _, sentence in candidates:
+        if re.search(r"\b(?:is|are)\s+(?:a|an)\s+(?:set|collection)\b", sentence, re.I):
+            continue
+        if not sentence.endswith((".", "!", "?")):
+            continue
+        return sentence
+    return None
+
+
 def build_inputs(question, context_text, quiz_mode=False):
     task = ("Generate one course-grounded practice question. "
             "Do not include the answer yet.\n" if quiz_mode else "")
@@ -324,6 +389,7 @@ def print_help():
 print("\nBIFS 614 Interactive Course Tutor")
 print("Ask a question about the course. Type /help for commands.")
 previous_question = None
+previous_topic = None
 quiz_topic = None
 last_quiz_question = None
 debug = False
@@ -345,6 +411,7 @@ while True:
         continue
     if command == "/reset":
         previous_question = None
+        previous_topic = None
         quiz_topic = None
         last_quiz_question = None
         print("Conversation topic cleared.")
@@ -382,9 +449,10 @@ while True:
             # no unsupported correctness judgment is assumed.
             question = (f"Practice question: {last_quiz_question}\nLearner response: {user_message}\nEvaluate this response using only the course context." if last_quiz_question else f"Regarding {quiz_topic}: {user_message}")
 
-    if not quiz_mode and previous_question and command in ("can you explain that further?", "can you explain that further", "tell me more", "explain that further"):
-        question = f"Explain more about: {previous_question}"
-    retrieval_query = contextualize_question(question, previous_question)
+    followup = followup_kind(user_message) if not quiz_mode else None
+    if followup and previous_topic:
+        question = f"Explain {previous_topic}" if followup == "expand" else f"Example of {previous_topic}"
+    retrieval_query = contextualize_question(question, previous_topic if not followup else None)
     start = time.time()
     context_text, selected = retrieve_context(retrieval_query)
     retrieval_seconds = time.time() - start
@@ -399,7 +467,11 @@ while True:
 
     # For direct definitions, extract the source definition rather than risking
     # invented applications. For other tasks, generate then conservatively screen.
-    direct_answer = extract_definition(question, selected) if not quiz_mode else None
+    direct_answer = None
+    if followup and previous_topic:
+        direct_answer = extract_supported_expansion(previous_topic, selected, followup)
+    elif not quiz_mode:
+        direct_answer = extract_definition(question, selected)
     try:
         if direct_answer:
             answer = direct_answer
@@ -430,4 +502,6 @@ while True:
         if quiz_mode:
             last_quiz_question = answer
         else:
-            previous_question = retrieval_query
+            previous_question = user_message
+            if not followup:
+                previous_topic = topic_from_question(user_message)
