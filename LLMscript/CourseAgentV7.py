@@ -7,7 +7,7 @@ import time
 
 # ============================================================
 # CourseAgentV7
-# BIFS 614 Tutor Mode
+# BIFS 614 Tutor Mode Q and A V1
 #
 # V7 Goal:
 # Improve retrieval grounding and prevent Phi-3 from answering
