@@ -1,5 +1,6 @@
 # Revised tutor mode: supports CPU or CUDA with FAISS retrieval and no forced quiz prompts.
-# Conservative grounding: source-extractive definitions + lexical answer screen.
+# Conservative grounding: validated definition clauses + lexical answer screen.
+# Lexical overlap is not proof of entailment; manual validation remains necessary.
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from sentence_transformers import SentenceTransformer
@@ -187,24 +188,45 @@ def verify_answer(answer, selected):
     return True
 
 def extract_definition(question, selected):
-    """Use a course sentence verbatim for simple 'what is' definitions."""
+    """Extract only an explicit definitional clause; never a procedural 'is required' phrase."""
     m = re.match(r"^(?:what is|what are|define)\s+(.+?)\??$", question.strip(), re.I)
     if not m:
         return None
     term = m.group(1).strip().rstrip("?.")
-    if len(term) > 65:
+    if not term or len(term) > 65:
         return None
-    escaped = re.escape(term)
-    pattern = re.compile(r"\b" + escaped + r"\b\s+(?:is|are|refers to|means)\b", re.I)
+
+    # Search for a definition *anywhere* within each passage, including passages
+    # where a sentence tokenizer cannot split after a code fragment.
+    pattern = re.compile(r"\b" + re.escape(term) +
+                         r"\b\s+(?:is|are|refers to|means)\s+", re.I)
+    candidates = []
     for item in selected:
-        for sentence in split_sentences(item["text"]):
-            match = pattern.search(sentence)
-            if match:
-                # Remove leading unrelated material, retaining exact source wording.
-                candidate = sentence[match.start():].strip()
-                if 8 <= len(candidate.split()) <= 55:
-                    return candidate
-    return None
+        text = item["text"]
+        for match in pattern.finditer(text):
+            tail = text[match.end():]
+            # A definition must name a category, not say something is required,
+            # installed, available, or used in a procedural instruction.
+            category = re.match(
+                r"(a|an|the)\s+((?:(?![.!?\n]).){5,220})", tail, re.I
+            )
+            if not category:
+                continue
+            description = category.group(0).split("\n", 1)[0]
+            description = re.split(r"(?<=[.!?])\s|\s+[–—]\s+", description, maxsplit=1)[0]
+            # Keep the source clause short and avoid truncating at an arbitrary
+            # word boundary. A long/noisy candidate is safer to reject.
+            description = description.strip().rstrip(' ,;:')
+            if not (5 <= len(description.split()) <= 35):
+                continue
+            if re.search(r"\b(required|install|installed|check|click|line \d+|run)\b", description, re.I):
+                continue
+            candidate = text[match.start():match.end()] + description
+            candidate = candidate.rstrip(" .") + "."
+            score = (2 if re.search(r"\b(set|collection|group|package|packages|library|libraries|tool|tools)\b", description, re.I) else 0)
+            score += 1 if len(description.split()) <= 22 else 0
+            candidates.append((score, -len(candidate), candidate))
+    return max(candidates)[2] if candidates else None
 
 
 
