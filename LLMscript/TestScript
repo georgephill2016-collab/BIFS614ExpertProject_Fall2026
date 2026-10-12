@@ -1,4 +1,4 @@
-# BIFS 614 Question and Answer Tutor - V3
+# Saras Question and Answer Script
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from sentence_transformers import SentenceTransformer
@@ -6,7 +6,6 @@ import faiss
 import pickle
 import torch
 import time
-import re
 
 # ============================================================
 # CourseAgentQuestionandAnswer
@@ -48,7 +47,7 @@ model = AutoModelForCausalLM.from_pretrained(
 model.eval()
 
 print("Model loaded successfully.")
-# print(f"Model device: {model.device}")
+print(f"Model device: {model.device}")
 
 # Phi-3 uses <|end|> to mark the end of a turn.
 END_TOKEN_ID = tokenizer.convert_tokens_to_ids("<|end|>")
@@ -76,7 +75,7 @@ index = faiss.read_index("knowledge.index")
 with open("chunks.pkl", "rb") as f:
     chunks = pickle.load(f)
 
-# print(f"Knowledge base loaded: {len(chunks)} chunks.")
+print(f"Knowledge base loaded: {len(chunks)} chunks.")
 
 
 # ============================================================
@@ -95,154 +94,95 @@ MAX_DISTANCE = 1.50
 
 
 # ============================================================
-# Optional grounding diagnostics
-# ============================================================
-# Students do not see diagnostic output by default.
-# Set True while testing to inspect retrieved evidence and warnings.
-DEBUG_GROUNDING = False
-
-# If True, a response containing an unfamiliar technical term is
-# withheld rather than displayed. This is intentionally OFF by default:
-# the check is heuristic and can reject valid paraphrases.
-STRICT_TERM_CHECK = False
-
-FALLBACK = "I could not find the answer in the provided context."
-
-# Common words are not considered technical terms by this heuristic.
-# This is not a claim-level factual verification system.
-COMMON_WORDS = {
-    "because", "between", "different", "information", "important",
-    "provides", "provided", "question", "response", "example",
-    "examples", "includes", "including", "similar", "specific",
-    "process", "processes", "elements", "individual", "compared",
-    "comparison", "efficient", "efficiency", "structure", "structures",
-    "organizes", "organize", "organized", "organizing", "distance",
-    "distances", "repeated", "repeatedly", "closest", "starting",
-    "results", "resulting", "allows", "allowing", "requires",
-    "require", "required", "however", "therefore", "through",
-    "without", "within", "related", "represent", "represents",
-    "representing", "number", "numbers", "dataset", "datasets",
-    "contains", "contain", "containing", "relevant", "meaning",
-    "usually", "typically", "according", "material", "lecture",
-    "course", "context", "describes", "described", "explain",
-    "explains", "analysis", "analyzing", "technique", "techniques",
-    "method", "methods", "beginning", "together", "another",
-    "original", "possible", "computing", "computed", "computational",
-    "following", "several", "single", "rather", "instead", "given",
-    "using", "which", "their", "these", "those", "where", "while",
-    "after", "before", "until", "every", "first", "second",
-}
-
-
-def unsupported_technical_terms(answer, context):
-    """Heuristic warning: long answer words absent from retrieved context.
-
-    Does NOT establish whether an answer is true or entailed.
-    """
-    source_words = set(re.findall(r"[a-zA-Z]+", context.lower()))
-    answer_words = set(re.findall(r"[a-zA-Z]+", answer.lower()))
-    unknown = []
-    for word in sorted(answer_words):
-        if len(word) < 9 or word in COMMON_WORDS:
-            continue
-        # Accept simple inflection changes when a matching root exists.
-        roots = {word, word.rstrip("s"), word.removesuffix("ing"),
-                 word.removesuffix("ed"), word.removesuffix("ly")}
-        if not any(root in source_words for root in roots if root):
-            unknown.append(word)
-    return unknown
-
-
-# ============================================================
-# Hybrid retrieval: exact phrase matches + FAISS
-# ============================================================
-# Exact matching is deliberately limited to informative phrases,
-# to avoid matching generic words like "what" or "analysis".
-# This is an additional retrieval route, NOT proof that a chunk
-# supports an answer. It helps with acronyms such as SAGE.
-
-def lexical_search_phrases(question):
-    q = re.sub(r"[^a-z0-9]+", " ", question.lower()).strip()
-    # Remove common question framing while preserving topic wording.
-    q = re.sub(
-        r"^(?:what is|what are|define|explain|describe|tell me about|"
-        r"how does|how do|why is|why are)\s+", "", q
-    )
-    q = re.sub(r"^(?:a|an|the)\s+", "", q)
-    q = re.sub(r"\b(?:in the course|in our lectures|please)\b", "", q).strip()
-    words = q.split()
-    phrases = []
-    if len(words) >= 2 and len(q) >= 5:
-        phrases.append(q)
-    # Also try distinctive uppercase acronyms found in the question.
-    for acronym in re.findall(r"\b[A-Z]{2,8}\b", question):
-        if acronym.lower() not in {"WHAT", "HOW", "WHY", "THE", "AND"}:
-            phrases.append(acronym.lower())
-    return list(dict.fromkeys(phrases))
-
-
-def lexical_matches(question):
-    phrases = lexical_search_phrases(question)
-    if not phrases:
-        return []
-    matches = []
-    for i, chunk in enumerate(chunks):
-        content = str(chunk).lower()
-        # Boundary checks stop "SAGE" matching words like "message".
-        for phrase in phrases:
-            if re.search(r"(?<![a-z0-9])" + re.escape(phrase) +
-                         r"(?![a-z0-9])", content):
-                matches.append(i)
-                break
-    return matches
-
-
-# ============================================================
 # Retrieval Function
 # ============================================================
 
 def retrieve_context(question):
-    # 1. Semantic FAISS candidates (original V2 settings preserved).
+
     query_embedding = embedding_model.encode(
-        [question], convert_to_numpy=True
+        [question],
+        convert_to_numpy=True
     )
+
+    # Must match normalization used when building the index.
     faiss.normalize_L2(query_embedding)
-    distances, indices = index.search(query_embedding, CANDIDATE_K)
 
-    semantic_candidates = [
-        (int(idx), float(distance))
-        for distance, idx in zip(distances[0], indices[0])
-        if idx >= 0 and distance <= MAX_DISTANCE
-    ]
+    # Retrieve a broader candidate set.
+    distances, indices = index.search(
+        query_embedding,
+        CANDIDATE_K
+    )
 
-    # 2. Literal phrase matches from chunks.pkl. These are allowed
-    # even if FAISS failed to rank them in its nearest candidates.
-    literal_ids = lexical_matches(question)
+# Candidate Indices: the IDs of the 5 chunks FAISS found that are most similar to the students question
+    # They are basically locations inside chunks.pkl
+# Candidate Distances: Show how semantically close each candidate is to the question. Lower is better
 
-    # 3. Prefer exact topic mentions, but keep the original FAISS
-    # results as a fallback for questions without a literal match.
-    selected_ids = []
-    for idx in literal_ids:
-        if idx not in selected_ids:
-            selected_ids.append(idx)
-        if len(selected_ids) >= CONTEXT_K:
-            break
+#     print("Candidate Indices:", indices)
+#     print("Candidate Distances:", distances)
 
-    for idx, distance in semantic_candidates:
-        if len(selected_ids) >= CONTEXT_K:
-            break
-        if idx not in selected_ids:
-            selected_ids.append(idx)
+    best_distance = float(distances[0][0])
 
-    if DEBUG_GROUNDING:
-        print("[DEBUG] Literal match indices:", literal_ids[:15])
-        print("[DEBUG] FAISS qualifying candidates:", semantic_candidates)
-        print("[DEBUG] Selected indices:", selected_ids)
+# Best Distance and Maximum Allowed Distance are the retrieval guardrail
+# The max allowed distance is 1.50, so if the best distance is below that, then the retrieval guardrail passes
 
-    if not selected_ids:
+#     print(f"Best Distance: {best_distance:.4f}")
+#     print(f"Maximum Allowed Distance: {MAX_DISTANCE:.4f}")
+
+    # --------------------------------------------------------
+    # Retrieval Guardrail
+    # --------------------------------------------------------
+# This is the important addition from V6, so that when we ask an unrelated question like "Why is the sky blue?"
+# The closest chunk is over 1.50 for max distance, never gets passed to Phi-3, and we get the correct prompt returned
+
+    # If the closest chunk is still too far away,
+    # consider the question unsupported by the course content.
+    if best_distance > MAX_DISTANCE:
+
+#         print("Retrieval Guardrail: REJECTED")
         return None
 
-    return "\n\n".join(str(chunks[idx]) for idx in selected_ids)
+    # --------------------------------------------------------
+    # Context Selection
+    # --------------------------------------------------------
+
+    selected_chunks = []
+    selected_indices = []
+    selected_distances = []
+
+    for distance, idx in zip(distances[0], indices[0]):
+
+        if idx == -1:
+            continue
+
+        if distance > MAX_DISTANCE:
+            continue
+
+        selected_chunks.append(chunks[idx])
+        selected_indices.append(int(idx))
+        selected_distances.append(float(distance))
+
+        # Stop once enough evidence has been collected.
+        if len(selected_chunks) >= CONTEXT_K:
+            break
+
+    if not selected_chunks:
+
+#         print("Retrieval Guardrail: REJECTED")
+        return None
+
+#     print(
+#         f"Retrieval Guardrail: PASSED "
+#         f"({len(selected_chunks)} selected chunk(s))"
+#     )
+
+#     print("Selected Indices:", selected_indices)
+
+#     print(
+#         "Selected Distances:",
+#         [round(d, 4) for d in selected_distances]
+#     )
+
+    return "\n\n".join(selected_chunks)
 
 
 # ============================================================
@@ -255,7 +195,7 @@ print("Type 'quit', 'exit', or 'q' to stop.\n")
 
 while True:
 
-    user_prompt = input("Student Question: ").strip()
+    user_prompt = input("You: ").strip()
 
     if user_prompt.lower() in ["quit", "exit", "q"]:
         print("Goodbye!")
@@ -293,7 +233,7 @@ while True:
             "I could not find the answer in the provided context."
         )
 
-        print("Tutor Response:", response)
+        print("Response:", response)
         continue
 
 
@@ -328,13 +268,7 @@ while True:
     Answer the QUESTION using only claims explicitly supported by the
     COURSE CONTEXT.
 
-    You may summarize or paraphrase the COURSE CONTEXT, but do not
-    introduce additional technical terminology, labels, named concepts,
-    or examples unless those terms or concepts appear in COURSE CONTEXT.
-
-    Before answering, silently check each sentence against COURSE CONTEXT.
-    Remove any statement that cannot be supported by the supplied text.
-    Do not mention your checks or the words COURSE CONTEXT in the answer.
+    You may summarize or paraphrase the COURSE CONTEXT.
 
     Do not add facts from your pretrained knowledge, even if those
     facts are correct.
@@ -356,12 +290,8 @@ while True:
 
     I could not find the answer in the provided context.
 
-    Prefer the terminology used in the lectures. For example, if the
-    context describes a tree, call it a tree; do not introduce another
-    technical name for it unless that name appears in the context.
-
-    Give a direct answer in 1-3 sentences. Stop when the QUESTION has
-    been answered.
+    Give a direct and concise answer. Stop when the QUESTION has been
+    answered.
     <|end|>
 
     <|user|>
@@ -464,46 +394,6 @@ while True:
 
 
     # ========================================================
-    # Normalize unsupported-answer refusals to exact fallback.
-    # Phi-3 sometimes says "I'm sorry, the context doesn't mention..."
-    # instead of the required sentence. This handles recognizable
-    # refusals, but cannot detect every unsupported generated claim.
-    # ========================================================
-    refusal_patterns = [
-        r"\bi (?:could not|cannot|can't|am unable to) (?:find|answer|provide)\b",
-        r"\b(?:no|not enough|insufficient) (?:relevant )?information\b",
-        r"\b(?:does not|doesn't|do not) (?:mention|contain|provide|include)\b",
-        r"\b(?:there is|there's) no (?:information|mention|reference)\b",
-        r"\bnot (?:mentioned|covered|found|available) in (?:the )?(?:provided )?(?:course )?context\b",
-    ]
-    if response == FALLBACK or any(
-        re.search(pattern, response.lower()) for pattern in refusal_patterns
-    ):
-        response = FALLBACK
-
-    # ========================================================
-    # Optional terminology grounding check
-    # ========================================================
-    # This flags terms absent from the retrieved course text. It is NOT
-    # an entailment check and does not guarantee source-only answers.
-    suspect_terms = (unsupported_technical_terms(response, context)
-                     if response != FALLBACK else [])
-
-    if DEBUG_GROUNDING:
-        print("\n[DEBUG] Retrieved course context:\n", context)
-        if suspect_terms:
-            print("[DEBUG] Potentially unsupported terminology:",
-                  ", ".join(suspect_terms))
-        else:
-            print("[DEBUG] No unfamiliar long terms detected; factual"
-                  " grounding is NOT guaranteed.")
-
-    if STRICT_TERM_CHECK and suspect_terms:
-        if DEBUG_GROUNDING:
-            print("[DEBUG] Answer withheld by heuristic term check.")
-        response = FALLBACK
-
-    # ========================================================
     # Token Statistics
     # ========================================================
 
@@ -518,7 +408,7 @@ while True:
     # Display Answer
     # ========================================================
 
-    print("Tutor Response:", response)
+    print("Response:", response)
 
 #     print(f"Input Tokens:  {input_token_count}")
 #     print(f"Output Tokens: {output_token_count}")
