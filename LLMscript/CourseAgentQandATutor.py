@@ -4,17 +4,16 @@ import faiss
 import pickle
 import torch
 import time
-import re
 
 # ============================================================
-# Course Agent V7 Final for Question and Answer Mode
-# BIFS 614 Tutor Mode
+# Course Agent Question and Answer Tutor Mode
 
-# This script is for Tutor Mode: Question and Answer
-# And is designed to use only course content contained in knowledge.txt from lecture material
-# Student asks a question related to the course material in "Student Question" Prompt
-# "Tutor Response:" Answers students question with relevant course material
-# The Input Tokens, Generation Time, Candidate Distances and Indices, Retrieved Context Chunks are all hidden from the student
+# This script is for the Question and Answer Version of Tutor Mode
+# It is designed to use only course content contained in knowledge.txt from the lecture material
+# The student asks a question related to the course material in "Student Question:" Prompt
+# The "Tutor Response:" answers students question with relevant course material
+# The Input Tokens, Generation Time, Candidate Distances and Indices,
+# and Retrieved Context Chunks are all hidden from the student in comments 
 
 # Goal:
 # Improve retrieval grounding and prevent Phi-3 from answering
@@ -96,65 +95,6 @@ CONTEXT_K = 2
 # If even the best candidate exceeds this distance,
 # reject the question as unrelated to the course material.
 MAX_DISTANCE = 1.50
-
-
-# ============================================================
-# Optional grounding diagnostics
-# ============================================================
-# Students do not see diagnostic output by default.
-# Set True while testing to inspect retrieved evidence and warnings.
-DEBUG_GROUNDING = False
-
-# If True, a response containing an unfamiliar technical term is
-# withheld rather than displayed. This is intentionally OFF by default:
-# the check is heuristic and can reject valid paraphrases.
-STRICT_TERM_CHECK = False
-
-FALLBACK = "I could not find the answer in the provided context."
-
-# Common words are not considered technical terms by this heuristic.
-# This is not a claim-level factual verification system.
-COMMON_WORDS = {
-    "because", "between", "different", "information", "important",
-    "provides", "provided", "question", "response", "example",
-    "examples", "includes", "including", "similar", "specific",
-    "process", "processes", "elements", "individual", "compared",
-    "comparison", "efficient", "efficiency", "structure", "structures",
-    "organizes", "organize", "organized", "organizing", "distance",
-    "distances", "repeated", "repeatedly", "closest", "starting",
-    "results", "resulting", "allows", "allowing", "requires",
-    "require", "required", "however", "therefore", "through",
-    "without", "within", "related", "represent", "represents",
-    "representing", "number", "numbers", "dataset", "datasets",
-    "contains", "contain", "containing", "relevant", "meaning",
-    "usually", "typically", "according", "material", "lecture",
-    "course", "context", "describes", "described", "explain",
-    "explains", "analysis", "analyzing", "technique", "techniques",
-    "method", "methods", "beginning", "together", "another",
-    "original", "possible", "computing", "computed", "computational",
-    "following", "several", "single", "rather", "instead", "given",
-    "using", "which", "their", "these", "those", "where", "while",
-    "after", "before", "until", "every", "first", "second",
-}
-
-
-def unsupported_technical_terms(answer, context):
-    """Heuristic warning: long answer words absent from retrieved context.
-
-    Does NOT establish whether an answer is true or entailed.
-    """
-    source_words = set(re.findall(r"[a-zA-Z]+", context.lower()))
-    answer_words = set(re.findall(r"[a-zA-Z]+", answer.lower()))
-    unknown = []
-    for word in sorted(answer_words):
-        if len(word) < 9 or word in COMMON_WORDS:
-            continue
-        # Accept simple inflection changes when a matching root exists.
-        roots = {word, word.rstrip("s"), word.removesuffix("ing"),
-                 word.removesuffix("ed"), word.removesuffix("ly")}
-        if not any(root in source_words for root in roots if root):
-            unknown.append(word)
-    return unknown
 
 
 # ============================================================
@@ -259,7 +199,7 @@ print("Type 'quit', 'exit', or 'q' to stop.\n")
 
 while True:
 
-    user_prompt = input("You: ").strip()
+    user_prompt = input("Student Question: ").strip()
 
     if user_prompt.lower() in ["quit", "exit", "q"]:
         print("Goodbye!")
@@ -297,7 +237,7 @@ while True:
             "I could not find the answer in the provided context."
         )
 
-        print("Response:", response)
+        print("Tutor Response:", response)
         continue
 
 
@@ -468,27 +408,6 @@ while True:
 
 
     # ========================================================
-    # Optional terminology grounding check
-    # ========================================================
-    # This flags terms absent from the retrieved course text. It is NOT
-    # an entailment check and does not guarantee source-only answers.
-    suspect_terms = unsupported_technical_terms(response, context)
-
-    if DEBUG_GROUNDING:
-        print("\n[DEBUG] Retrieved course context:\n", context)
-        if suspect_terms:
-            print("[DEBUG] Potentially unsupported terminology:",
-                  ", ".join(suspect_terms))
-        else:
-            print("[DEBUG] No unfamiliar long terms detected; factual"
-                  " grounding is NOT guaranteed.")
-
-    if STRICT_TERM_CHECK and suspect_terms:
-        if DEBUG_GROUNDING:
-            print("[DEBUG] Answer withheld by heuristic term check.")
-        response = FALLBACK
-
-    # ========================================================
     # Token Statistics
     # ========================================================
 
@@ -503,7 +422,7 @@ while True:
     # Display Answer
     # ========================================================
 
-    print("Response:", response)
+    print("Tutor Response:", response)
 
 #     print(f"Input Tokens:  {input_token_count}")
 #     print(f"Output Tokens: {output_token_count}")
