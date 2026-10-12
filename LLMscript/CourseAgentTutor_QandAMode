@@ -11,6 +11,7 @@ import re
 # BIFS 614 Tutor Mode
 
 # This script is for Tutor Mode: Question and Answer
+# And is designed to use only course content contained in knowledge.txt from lecture material
 # Student asks a question related to the course material in "Student Question" Prompt
 # "Tutor Response:" Answers students question with relevant course material
 # The Input Tokens, Generation Time, Candidate Distances and Indices, Retrieved Context Chunks are all hidden from the student
