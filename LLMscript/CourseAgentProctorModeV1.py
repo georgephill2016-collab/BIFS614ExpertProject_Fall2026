@@ -205,13 +205,14 @@ def grade_answer(question, reference, student_answer, context):
     print("\nDEBUG - Raw Grading Response:")
     print(repr(result))
 
-if not result:
-    return "Unable to Grade", "No usable evaluation was generated."
+    if not result:
+        return "Unable to Grade", "No usable evaluation was generated."
 
     match = re.fullmatch(
         r"\s*Grade:\s*(Correct|Incorrect|Unable to Grade)\s*\nFeedback:\s*(.+?)\s*",
         result, flags=re.IGNORECASE | re.DOTALL,
     )
+    
     if not match:
         return "Unable to Grade", "The evaluator returned an invalid grade format."
     grade = match.group(1).title()
