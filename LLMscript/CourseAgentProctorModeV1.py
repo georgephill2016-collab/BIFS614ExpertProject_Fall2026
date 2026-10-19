@@ -37,14 +37,31 @@ def find_data_dir():
     raise FileNotFoundError("Could not find knowledge.index and chunks.pkl. Run build_index.py first.")
 
 
+
 print("Loading Phi-3...")
-print(f"GPU: {torch.cuda.get_device_name(0)}" if torch.cuda.is_available() else "No CUDA GPU")
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
-model = AutoModelForCausalLM.from_pretrained(
-    MODEL_NAME, device_map="auto", trust_remote_code=True
+
+print(
+    f"GPU: {torch.cuda.get_device_name(0)}"
+    if torch.cuda.is_available()
+    else "No CUDA GPU"
 )
+
+tokenizer = AutoTokenizer.from_pretrained(
+    MODEL_NAME,
+    trust_remote_code=True
+)
+
+model = AutoModelForCausalLM.from_pretrained(
+    MODEL_NAME,
+    device_map="auto",
+    trust_remote_code=True
+)
+
 model.eval()
-print("Model loaded.")
+
+print("Model loaded successfully.")
+print(f"Model Device: {model.device}")
+
 
 print("Loading embeddings and FAISS...")
 embedding_model = SentenceTransformer(EMBEDDING_MODEL)
