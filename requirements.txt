@@ -9,3 +9,5 @@ bitsandbytes
 torch
 accelerate
 streamlit
+torchvision
+torchaudio
