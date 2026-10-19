@@ -198,9 +198,16 @@ def grade_answer(question, reference, student_answer, context):
     fitted = fitted_context([context], GRADE_SYSTEM, task, reserve=250)
     if not fitted:
         return "Unable to Grade", "The context was too long to evaluate safely."
+   
     result = generate(GRADE_SYSTEM, f"COURSE CONTEXT:\n{fitted}\n\n{task}", 160)
-    if not result:
-        return "Unable to Grade", "No usable evaluation was generated."
+
+    # Temporary diagnostic: display Phi-3's grading response
+    print("\nDEBUG - Raw Grading Response:")
+    print(repr(result))
+
+if not result:
+    return "Unable to Grade", "No usable evaluation was generated."
+
     match = re.fullmatch(
         r"\s*Grade:\s*(Correct|Incorrect|Unable to Grade)\s*\nFeedback:\s*(.+?)\s*",
         result, flags=re.IGNORECASE | re.DOTALL,
