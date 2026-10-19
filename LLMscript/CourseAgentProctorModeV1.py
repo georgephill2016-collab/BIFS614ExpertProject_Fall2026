@@ -38,29 +38,24 @@ def find_data_dir():
 
 
 
-print("Loading Phi-3...")
 
-print(
-    f"GPU: {torch.cuda.get_device_name(0)}"
-    if torch.cuda.is_available()
-    else "No CUDA GPU"
-)
+# =====================================================
+# MODEL - Same loading configuration as V7 Final
+# =====================================================
 
-tokenizer = AutoTokenizer.from_pretrained(
-    MODEL_NAME,
-    trust_remote_code=True
-)
+print("Loading Phi-3 model...")
+
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME,
-    device_map="auto",
-    trust_remote_code=True
+    device_map="auto"
 )
 
 model.eval()
 
 print("Model loaded successfully.")
-print(f"Model Device: {model.device}")
+
 
 
 print("Loading embeddings and FAISS...")
