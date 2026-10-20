@@ -1,4 +1,4 @@
-"""BIFS 614 experimental Proctor V4 (Phi-3 + FAISS).
+"""BIFS 614 experimental Practice Question Version (Phi-3 + FAISS).
 
 Run from the repository root after building knowledge.index and chunks.pkl:
     python LLMscript/CourseAgentProctorModeV4.py
