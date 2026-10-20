@@ -1,4 +1,4 @@
-"""BIFS 614 combined V7 Q&A Tutor and Practice Question SD (Phi-3 + FAISS).
+"""BIFS 614 combined V7 Q&A Tutor and CourseAgentV9-1 (Phi-3 + FAISS).
 
 Run from the repository root after building knowledge.index and chunks.pkl:
     python LLMscript/CourseAgentV7_V4_Combined.py
