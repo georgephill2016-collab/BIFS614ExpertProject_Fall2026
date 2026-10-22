@@ -19,7 +19,7 @@ CONTEXT_K = 4
 MAX_DISTANCE = 1.50
 MAX_NEW_TOKENS = 180
 MAX_INPUT_TOKENS = 3800
-DEBUG = False
+DEBUG = True
 
 print("Loading Phi-3...")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
