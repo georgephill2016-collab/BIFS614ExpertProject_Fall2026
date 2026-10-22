@@ -83,9 +83,11 @@ def retrieve(query):
     return "\n\n".join(p for _, _, _, p in selected) if selected else None
 
 
-def generate(context, topic, task, previous_teaching="", question="", answer="", expected_answer=""):
+def generate(context, topic, task, previous_teaching="",
+             question="", answer="", expected_answer=""):
     """Generate from retrieved lecture passages; prompting is not a proof of grounding."""
-        system = f"""You are a friendly BIFS 614 course tutor.
+
+    system = f"""You are a friendly BIFS 614 course tutor.
 
 Your knowledge for this question is limited to the COURSE EXCERPTS
 provided below.
