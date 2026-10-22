@@ -157,15 +157,40 @@ or unsolicited follow-up questions.
 
 Complete your final sentence and stop.
 """
-    user = f"""TOPIC: {topic}
+        user = f"""TOPIC: {topic}
+
 COURSE EXCERPTS:
 {context}
+"""
+
+    if previous_teaching:
+        user += f"""
 EARLIER TUTOR EXPLANATION (not a source):
 {previous_teaching}
-PRACTICE QUESTION: {question}
-EXPECTED ANSWER (supported by excerpts): {expected_answer}
-STUDENT ANSWER: {answer}
-INSTRUCTION: {task}"""
+"""
+
+    if question:
+        user += f"""
+PRACTICE QUESTION:
+{question}
+"""
+
+    if expected_answer:
+        user += f"""
+EXPECTED ANSWER (supported by excerpts):
+{expected_answer}
+"""
+
+    if answer:
+        user += f"""
+STUDENT ANSWER:
+{answer}
+"""
+
+    user += f"""
+INSTRUCTION:
+{task}
+"""
     prompt = f"<|system|>\n{system}<|end|>\n<|user|>\n{user}<|end|>\n<|assistant|>"
     ids = tokenizer.encode(prompt, return_tensors="pt")
     if ids.shape[1] > MAX_INPUT_TOKENS:
