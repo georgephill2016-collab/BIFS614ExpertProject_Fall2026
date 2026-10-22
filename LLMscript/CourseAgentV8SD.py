@@ -272,7 +272,7 @@ def main():
             task = (f"Clarify this difficulty: {difficulty or topic}. "
                     "Use only facts in the excerpts, in 1-2 short sentences. "
                     "No headings, questions, or quizzes.")
-        explanation = teaching_only(generate(context, topic, task))
+        explanation = teaching_only(generate(context, "K-means", task))
         print("\nTutor:", explanation)
         if explanation == FALLBACK:
             continue
