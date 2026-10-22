@@ -1,4 +1,4 @@
-"""BIFS 614 student-controlled Guided Tutor (V8SD-3, grounded interactive learning).
+"""BIFS 614 student-controlled Guided Tutor (V8SD-4, definition-first retrieval test).
 Requires knowledge.index and chunks.pkl in repository root.
 """
 import pickle
@@ -19,7 +19,7 @@ CONTEXT_K = 4
 MAX_DISTANCE = 1.50
 MAX_NEW_TOKENS = 180
 MAX_INPUT_TOKENS = 3800
-DEBUG = True
+DEBUG = False
 
 print("Loading Phi-3...")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
@@ -53,10 +53,13 @@ def retrieve(query):
     distance_map = {int(i): float(d) for d, i in zip(distances[0], indices[0]) if i >= 0}
     topic = query.lower().strip()
     topic_pattern = re.compile(r"(?<!\w)" + re.escape(topic) + r"(?!\w)", re.I)
-    explanatory = re.compile(
-        re.escape(topic) + r"\s+(?:is|are|refers to|means|consists of|provides|allows|includes)\b",
-        re.I,
-    )
+    # Prefer genuine introductory definitions, including "In K-means clustering, ...".
+    # Do not award a definition bonus for "The disadvantage to K-means clustering is ...".
+    definition_patterns = [
+        re.compile(r"\b(?:in|for)\s+" + re.escape(topic) + r"\s*[,,:]", re.I),
+        re.compile(r"(?<!\w)" + re.escape(topic) +
+                   r"\s+(?:is|are|refers to|means|consists of|provides|allows|includes)\b", re.I),
+    ]
     ranked = []
     for idx, chunk in enumerate(chunks):
         passage = str(chunk)
@@ -65,8 +68,8 @@ def retrieve(query):
         if not has_topic and (distance is None or distance > MAX_DISTANCE):
             continue
         # Explanatory language is preferred, but not treated as proof of relevance.
-        definition = bool(explanatory.search(passage))
-        score = (4 if definition else 0) + (2 if has_topic else 0)
+        definition = any(pattern.search(passage) for pattern in definition_patterns)
+        score = (6 if definition else 0) + (2 if has_topic else 0)
         if distance is not None:
             score += max(0, 1.5 - distance)
         ranked.append((score, idx, distance, passage))
