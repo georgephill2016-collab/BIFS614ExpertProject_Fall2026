@@ -39,7 +39,7 @@ def find_data_dir():
 
 
 print("Loading Phi-3...")
-print(f"GPU: {torch.cuda.get_device_name(0)}" if torch.cuda.is_available() else "No CUDA GPU")
+# print(f"GPU: {torch.cuda.get_device_name(0)}" if torch.cuda.is_available() else "No CUDA GPU")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME, device_map="auto"
@@ -59,7 +59,7 @@ if index.d != embedding_model.get_sentence_embedding_dimension():
     raise ValueError("Embedding dimension does not match the FAISS index.")
 if not isinstance(index, faiss.IndexFlatL2):
     raise ValueError("This script's distance threshold assumes an IndexFlatL2 index.")
-print(f"Knowledge loaded: {len(chunks)} chunks from {data_dir}")
+# print(f"Knowledge loaded: {len(chunks)} chunks from {data_dir}")  # Developer debugging only
 
 
 def retrieve_context(query):
@@ -67,8 +67,8 @@ def retrieve_context(query):
         [query], convert_to_numpy=True, normalize_embeddings=True
     ).astype(np.float32)
     distances, indices = index.search(vector, min(TOP_K, index.ntotal))
-    print("Retrieved indices:", indices.tolist())
-    print("Squared L2 distances:", distances.round(3).tolist())
+    # print("Retrieved indices:", indices.tolist())  # Developer debugging only
+    # print("Squared L2 distances:", distances.round(3).tolist())  # Developer debugging only
     selected = []
     for idx, distance in zip(indices[0], distances[0]):
         if 0 <= idx < len(chunks) and distance <= MAX_DISTANCE:
@@ -419,9 +419,9 @@ def qa_mode():
 
 
 def practice_quiz_mode():
-    print("\nBIFS 614 Practice Quiz (Experimental)")
+    print("\nBIFS 614 Practice Quiz")
     print("Enter a study topic. Type /menu to return to the main menu.\n")
-    correct = partial = incorrect = ungraded = 0
+    # Score tracking omitted from student-facing practice mode.
     while True:
         topic = input("Study Topic: ").strip()
         if topic.lower() in {"/menu", "q", "quit", "exit"}:
@@ -448,21 +448,8 @@ def practice_quiz_mode():
             break
         grade, feedback = grade_answer(question, reference, answer, context)
         print(f"\nGrade: {grade}\nFeedback: {feedback}")
-        if grade == "Correct":
-            correct += 1
-        elif grade == "Partially Correct":
-            partial += 1
-        elif grade == "Incorrect":
-            incorrect += 1
-        else:
-            ungraded += 1
-        graded = correct + partial + incorrect
-        points = correct + 0.5 * partial
-        print(f"Current Score: {points:g}/{graded} graded questions (partial = 0.5 point)")
-        print(f"Correct: {correct} | Partial: {partial} | Incorrect: {incorrect} | Ungraded: {ungraded}")
-    graded = correct + partial + incorrect
-    print(f"\nFinal Practice Score: {correct + 0.5 * partial:g}/{graded} graded questions")
-    print(f"Ungraded questions: {ungraded}")
+        # Internal scoring summary removed for a cleaner practice experience.
+        print("\n----------------------------------------\n")
 
 
 def main():
