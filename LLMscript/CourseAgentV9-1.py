@@ -7,7 +7,6 @@ Never use this script for consequential student assessment without validation.
 from pathlib import Path
 import pickle
 import re
-import time
 
 import faiss
 import numpy as np
@@ -18,7 +17,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 MODEL_NAME = "microsoft/Phi-3-mini-4k-instruct"
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 TOP_K = 5
-DEBUG_GRADING = True  # Set False after reviewing test results
+DEBUG_GRADING = False  # Hide internal grading diagnostics
 MAX_DISTANCE = 1.5  # Squared L2 distance, only for normalized IndexFlatL2 embeddings
 MAX_INPUT_TOKENS = 3600  # Reserve space for generated output within Phi-3's 4096-token window
 MISSING = "I could not find the answer in the provided context."
@@ -63,8 +62,6 @@ def retrieve_context(query):
         [query], convert_to_numpy=True, normalize_embeddings=True
     ).astype(np.float32)
     distances, indices = index.search(vector, min(TOP_K, index.ntotal))
-    print("Retrieved indices:", indices.tolist())
-    print("Squared L2 distances:", distances.round(3).tolist())
     selected = []
     for idx, distance in zip(indices[0], distances[0]):
         if 0 <= idx < len(chunks) and distance <= MAX_DISTANCE:
@@ -291,58 +288,45 @@ def tutor_answer(question, retrieved):
 
 def main():
     print("\n================================")
-    print("BIFS 614 Practice Question Tutor Mode)")
+    print("BIFS 614 Practice Question Mode")
     print("================================")
     print("Enter a course topic for a practice question.")
     print("Type 'quit', 'exit', or 'q' to stop.\n")
-    correct = partial = incorrect = ungraded = 0
-
     while True:
         topic = input("\nStudy Topic: ").strip()
         if topic.lower() in QUIT:
             break
         if not topic:
             continue
-        start = time.time()
+
         retrieved = retrieve_context(topic)
-        print(f"Retrieval time: {time.time() - start:.2f}s")
         if not retrieved:
             print("No sufficiently relevant course material found for that topic.")
             continue
+
         generated = make_question(topic, retrieved)
         if generated is None:
             print("Could not create a supported question. Try a more specific topic.")
             continue
+
         question, context = generated
         reference = make_reference(question, context)
         if reference is None:
-            print("Could not produce a reference answer; skipping this question.")
+            print("Could not produce a supported answer key. Try another topic.")
             continue
-        print("\n================ PROCTOR QUESTION ================")
+
+        print("\nPractice Question:")
         print(question)
         answer = input("\nYour Answer: ").strip()
         if answer.lower() in QUIT:
             break
+
         grade, feedback = grade_answer(question, reference, answer, context)
-        print(f"\nGrade: {grade}\nFeedback: {feedback}")
-        if grade == "Correct":
-            correct += 1
-        elif grade == "Partially Correct":
-            partial += 1
-        elif grade == "Incorrect":
-            incorrect += 1
-        else:
-            ungraded += 1
-        graded = correct + partial + incorrect
-        points = correct + 0.5 * partial
-        print(f"Current Score: {points:g}/{graded} graded questions (partial = 0.5 point)")
-        print(f"Correct: {correct} | Partial: {partial} | Incorrect: {incorrect} | Ungraded: {ungraded}")
+        print(f"\nGrade: {grade}")
+        print(f"Feedback: {feedback}")
+        print("\n" + "-" * 40)
 
-    graded = correct + partial + incorrect
-    print(f"\nFinal Score: {correct + 0.5 * partial:g}/{graded} graded questions")
-    print(f"Ungraded questions: {ungraded}")
-    print("Goodbye!")
-
+    print("\nGoodbye!")
 
 if __name__ == "__main__":
     main()
