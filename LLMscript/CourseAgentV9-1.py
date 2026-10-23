@@ -1,7 +1,4 @@
-"""BIFS 614 experimental Practice Question Version (Phi-3 + FAISS).
-
-IMPORTANT: Automatic grading is experimental and should be manually audited.
-Never use this script for consequential student assessment without validation.
+"""BIFS 614 Practice Question Tutor Mode (Phi-3 + FAISS).
 """
 
 from pathlib import Path
