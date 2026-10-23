@@ -1,9 +1,5 @@
 """BIFS 614 experimental Practice Question Version (Phi-3 + FAISS).
 
-Run from the repository root after building knowledge.index and chunks.pkl:
-    python LLMscript/CourseAgentProctorModeV4.py
-(or python CourseAgentProctorModeV4.py if saved at repository root).
-
 IMPORTANT: Automatic grading is experimental and should be manually audited.
 Never use this script for consequential student assessment without validation.
 """
@@ -295,7 +291,7 @@ def tutor_answer(question, retrieved):
 
 def main():
     print("\n================================")
-    print("BIFS 614 Proctor Mode V4 (Experimental)")
+    print("BIFS 614 Practice Question Tutor Mode)")
     print("================================")
     print("Enter a course topic for a practice question.")
     print("Type 'quit', 'exit', or 'q' to stop.\n")
