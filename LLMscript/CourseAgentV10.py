@@ -2,10 +2,7 @@
 
 Run from the repository root after building knowledge.index and chunks.pkl:
     python LLMscript/CourseAgentV7_V4_Combined.py
-(or python CourseAgentV7_V4_Combined.py if saved at repository root).
 
-IMPORTANT: Automatic grading is experimental and should be manually audited.
-Never use this script for consequential student assessment without validation.
 """
 
 from pathlib import Path
