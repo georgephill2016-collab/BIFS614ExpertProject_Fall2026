@@ -1,6 +1,5 @@
-"""BIFS 614 student-controlled Guided Tutor (V8SD-4, definition-first retrieval test).
-Requires knowledge.index and chunks.pkl in repository root.
-"""
+# BIFS 614 Student-Controlled Guided Tutor 
+
 import pickle
 import re
 import time
