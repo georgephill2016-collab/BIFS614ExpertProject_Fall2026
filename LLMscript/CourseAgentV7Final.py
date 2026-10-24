@@ -1,3 +1,5 @@
+# Course Agent Question and Answer Tutor Mode
+
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from sentence_transformers import SentenceTransformer
 import faiss
@@ -6,7 +8,6 @@ import torch
 import time
 
 # ============================================================
-# Course Agent Question and Answer Tutor Mode
 
 # This script is for the Question and Answer Version of Tutor Mode
 # It is designed to use only course content contained in knowledge.txt from the lecture material
@@ -25,6 +26,7 @@ import time
 #
 # Questions whose best retrieved chunk exceeds the maximum
 # allowed distance are rejected before being sent to Phi-3.
+
 # ============================================================
 
 # print(
