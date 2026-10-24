@@ -182,7 +182,7 @@ def clean_tutor_text(text):
 
 
 def teaching_only(text):
-    """Remove unsolicited quiz/answer sections, not arbitrary factual sentences."""
+    """Remove unsolicited question/answer sections, not arbitrary factual sentences."""
     if text == FALLBACK:
         return text
     # A model may append 'Question: ... Answer: ...' despite instructions.
