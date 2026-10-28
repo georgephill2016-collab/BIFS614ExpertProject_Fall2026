@@ -275,7 +275,6 @@ if st.session_state.v8_context is not None:
                     "only using information supported by the excerpts. "
                     "Explain the SAME idea; no new facts, analogies, or "
                     "examples. Use 1-2 short sentences, no headings.")
-                )
             label = "Explain in more detail"
             with st.spinner("Clarifying the explanation..."):
                 response = teaching_only(generate(
