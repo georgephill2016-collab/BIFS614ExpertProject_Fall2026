@@ -270,8 +270,8 @@ if st.session_state.v8_context is not None:
             if response != FALLBACK:
                 st.session_state.v8_explanation = response
                 st.session_state.v8_previous.append(response)
-            else:
-                task = ("Restate the EARLIER TUTOR EXPLANATION more simply, but "
+        else:
+            task = ("Restate the EARLIER TUTOR EXPLANATION more simply, but "
                     "only using information supported by the excerpts. "
                     "Explain the SAME idea; no new facts, analogies, or "
                     "examples. Use 1-2 short sentences, no headings.")
