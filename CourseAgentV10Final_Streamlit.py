@@ -1,7 +1,5 @@
-# Streamlit adaptation of CourseAgentV10Final.py
-# Original prompts, retrieval, generation, and response cleaning preserved.
-# Only the terminal menus and input flow have been replaced.
 # BIFS 614 Student-Controlled Guided Tutor, including a practice question option
+# Streamlit adaptation of CourseAgentV10Final.py
 
 import pickle
 import re
