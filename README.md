@@ -60,13 +60,13 @@ An interactive tutor mode that allows students to explore course topics, review 
 
 A practice-based tutor mode where students receive more in-depth responses and explanations, and answer course-related questions with feedback on their responses.
 
-**Streamlit Link:** https://bifs614expertprojectfall2026-courseagentv10.streamlit.app/
+**Streamlit Link:** https://bifs614expertprojectfall2026-courseagentv9.streamlit.app/
 
 **Version 10 – Combined Interactive Tutor and Practice Questions**
 
 Combines the interactive learning features of Tutor Modes in Version 7, 8, and 9 including an option for practice questions, allowing students to review course concepts and test their understanding.
 
-**Streamlit Link:** https://bifs614expertprojectfall2026-courseagentv9.streamlit.app/
+**Streamlit Link:** https://bifs614expertprojectfall2026-courseagentv10.streamlit.app/
 
 ---
 
