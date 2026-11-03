@@ -29,7 +29,7 @@ The BIFS 614 Expert System has progressed through several stages of development,
 - Collection, conversion, cleaning, and validation of the BIFS 614 course materials to create a course-specific knowledge base.
 - Selection and testing of the Microsoft Phi-3 Mini language model.
 - Implementation of Retrieval-Augmented Generation (RAG) using text chunking, embeddings, and FAISS vector search.
-- Development of `build_index.py` to process the course knowledge base and generate the files needed for content retrieval.
+- Development of `build_index.py` to process the course knowledge base and generate the files needed for content retrieval, chunks.pkl and knowledge.index.
 - Development and testing of multiple CourseAgent Python scripts, with improvements to retrieval settings, system prompts, and guardrails to help ensure responses remain grounded in the provided course materials.
 - Development of four Tutor Mode versions, each providing different learning and interaction options.
 - Integration of Streamlit to provide a web-based interface for students to access and interact with the different Tutor Modes.
